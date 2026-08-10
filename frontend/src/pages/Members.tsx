@@ -1,0 +1,180 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { UserPlus, LayoutGrid, List, SlidersHorizontal } from 'lucide-react';
+import { MEMBERS, ORGANIZATIONS } from '../data/mockData';
+import type { Member, MemberFilters } from '../types';
+import MemberCard from '../components/members/MemberCard';
+import Modal from '../components/common/Modal';
+import MemberForm from '../components/members/MemberForm';
+import SearchBar from '../components/common/SearchBar';
+import Button from '../components/common/Button';
+import Badge from '../components/common/Badge';
+import Avatar from '../components/common/Avatar';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import clsx from 'clsx';
+
+export default function Members() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [members, setMembers] = useState<Member[]>(MEMBERS);
+  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [addOpen, setAddOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<MemberFilters>({
+    search: '', organizationId: '', status: '', locationStatus: '', attendanceStatus: '', isSharing: '',
+  });
+
+  const filtered = members.filter(m => {
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      if (!m.fullName.toLowerCase().includes(q) && !m.memberId.toLowerCase().includes(q) && !m.phone.includes(q)) return false;
+    }
+    if (filters.organizationId && m.organizationId !== filters.organizationId) return false;
+    if (filters.status && m.status !== filters.status) return false;
+    if (filters.locationStatus && m.locationStatus !== filters.locationStatus) return false;
+    if (filters.attendanceStatus && m.todayAttendance?.status !== filters.attendanceStatus) return false;
+    if (filters.isSharing === 'yes' && !m.isSharing) return false;
+    if (filters.isSharing === 'no' && m.isSharing) return false;
+    return true;
+  });
+
+  const handleAdd = (data: Partial<Member>) => {
+    const newMember: Member = {
+      id: `m-${Date.now()}`, fullName: data.fullName!, memberId: data.memberId!,
+      gender: data.gender!, phone: data.phone!, profilePhoto: data.profilePhoto,
+      organizationId: data.organizationId!, organization: ORGANIZATIONS.find(o => o.id === data.organizationId),
+      jobRole: data.jobRole!, workAddress: data.workAddress!, workLocationId: data.workLocationId,
+      registrationDate: data.registrationDate!, status: data.status!,
+      emergencyContact: data.emergencyContact!, notes: data.notes,
+      locationStatus: 'OFFLINE', isSharing: false,
+    };
+    setMembers(p => [newMember, ...p]);
+    setAddOpen(false);
+    toast.success(`${data.fullName} ${t('common.success').toLowerCase()}!`);
+  };
+
+  const SelectFilter = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+      <select
+        value={value} onChange={e => onChange(e.target.value)}
+        className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+      >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{t('members.title')}</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{filtered.length} {t('members.title').toLowerCase()}</p>
+        </div>
+        <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>{t('members.addMember')}</Button>
+      </div>
+
+      {/* Search + filter bar */}
+      <div className="flex gap-3 flex-wrap">
+        <SearchBar value={filters.search} onChange={v => setFilters(p => ({ ...p, search: v }))} placeholder={t('common.search') + '...'} className="flex-1 min-w-48" />
+        <Button variant="outline" size="sm" icon={<SlidersHorizontal size={14} />} onClick={() => setShowFilters(p => !p)}>
+          {t('common.filter')}
+        </Button>
+        <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
+          <button onClick={() => setView('grid')} className={clsx('p-2', view === 'grid' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')}>
+            <LayoutGrid size={16} />
+          </button>
+          <button onClick={() => setView('list')} className={clsx('p-2', view === 'list' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')}>
+            <List size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Filters panel */}
+      {showFilters && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <SelectFilter label={t('members.organization')} value={filters.organizationId} onChange={v => setFilters(p => ({ ...p, organizationId: v }))}
+            options={[{ value: '', label: t('common.all') }, ...ORGANIZATIONS.map(o => ({ value: o.id, label: o.name }))]} />
+          <SelectFilter label={t('members.status')} value={filters.status} onChange={v => setFilters(p => ({ ...p, status: v }))}
+            options={[{ value: '', label: t('common.all') }, { value: 'ACTIVE', label: t('status.active') }, { value: 'INACTIVE', label: t('status.inactive') }, { value: 'SUSPENDED', label: t('status.suspended') }]} />
+          <SelectFilter label="Location Status" value={filters.locationStatus} onChange={v => setFilters(p => ({ ...p, locationStatus: v }))}
+            options={[{ value: '', label: t('common.all') }, { value: 'AT_WORK', label: t('status.atWork') }, { value: 'NEARBY', label: t('status.nearby') }, { value: 'OUTSIDE', label: t('status.outside') }, { value: 'OFFLINE', label: t('status.offline') }]} />
+          <SelectFilter label={t('attendance.title')} value={filters.attendanceStatus} onChange={v => setFilters(p => ({ ...p, attendanceStatus: v }))}
+            options={[{ value: '', label: t('common.all') }, { value: 'PRESENT', label: t('status.present') }, { value: 'ABSENT', label: t('status.absent') }, { value: 'LATE', label: t('status.late') }]} />
+          <SelectFilter label="GPS Sharing" value={filters.isSharing} onChange={v => setFilters(p => ({ ...p, isSharing: v }))}
+            options={[{ value: '', label: t('common.all') }, { value: 'yes', label: 'Sharing' }, { value: 'no', label: 'Not Sharing' }]} />
+        </div>
+      )}
+
+      {/* Results */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Users size={48} className="mx-auto mb-3 opacity-30" />
+          <p>{t('members.noMembers')}</p>
+        </div>
+      ) : view === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map(m => <MemberCard key={m.id} member={m} />)}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700/50">
+              <tr>
+                {['Member', 'ID', 'Organization', 'Phone', 'Status', 'Attendance', 'GPS'].map(h => (
+                  <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(m => (
+                <tr key={m.id} onClick={() => navigate(`/members/${m.id}`)} className="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <Avatar src={m.profilePhoto} name={m.fullName} size="sm" online={m.isSharing} />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">{m.fullName}</p>
+                        <p className="text-xs text-gray-400">{m.jobRole}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-gray-500 dark:text-gray-400 font-mono text-xs">{m.memberId}</td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: m.organization?.color + '20', color: m.organization?.color }}>
+                      {m.organization?.name}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-gray-500 dark:text-gray-400">{m.phone}</td>
+                  <td className="py-3 px-4">
+                    <Badge label={m.status} variant={m.status === 'ACTIVE' ? 'success' : m.status === 'INACTIVE' ? 'default' : 'danger'} />
+                  </td>
+                  <td className="py-3 px-4">
+                    {m.todayAttendance && (
+                      <Badge
+                        label={m.todayAttendance.status}
+                        variant={m.todayAttendance.status === 'PRESENT' ? 'success' : m.todayAttendance.status === 'ABSENT' ? 'danger' : m.todayAttendance.status === 'LATE' ? 'warning' : 'info'}
+                      />
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    {m.isSharing
+                      ? <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">Live</span>
+                      : <span className="text-xs text-gray-400">Offline</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add modal */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('members.addMember')} size="lg">
+        <MemberForm onSubmit={handleAdd} onCancel={() => setAddOpen(false)} />
+      </Modal>
+    </div>
+  );
+}
