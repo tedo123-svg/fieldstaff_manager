@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UserPlus, LayoutGrid, List, SlidersHorizontal } from 'lucide-react';
+import { UserPlus, LayoutGrid, List, SlidersHorizontal, Users } from 'lucide-react';
 import { MEMBERS, ORGANIZATIONS } from '../data/mockData';
 import type { Member, MemberFilters } from '../types';
 import MemberCard from '../components/members/MemberCard';
