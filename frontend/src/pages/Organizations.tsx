@@ -171,14 +171,29 @@ export default function Organizations() {
       .select('*, members(id, status, is_sharing, todayAttendance:attendances(status))');
     if (data) {
       setOrgs((data as unknown[]).map((org: unknown) => {
-        const o = org as Organization & { members: { status: string; is_sharing: boolean; todayAttendance?: { status: string } }[] };
+        const o = org as Record<string, unknown> & {
+          members: { status: string; is_sharing: boolean; todayAttendance?: { status: string } }[];
+        };
         const members = o.members ?? [];
         return {
-          ...o,
+          id:          o.id,
+          name:        o.name,
+          nameEn:      o.name_en ?? o.nameEn ?? '',
+          nameOm:      o.name_om ?? o.nameOm ?? '',
+          color:       o.color ?? '#3B82F6',
+          bgColor:     o.bg_color ?? o.bgColor ?? '',
+          textColor:   o.text_color ?? o.textColor ?? 'text-white',
+          icon:        o.icon ?? '🔵',
+          description: o.description,
+          hasGroups:   o.has_groups ?? o.hasGroups ?? false,
+          memberCount: members.length,
+          activeCount: members.filter(m => m.status === 'ACTIVE').length,
           membersCount: members.length,
-          workingCount: members.filter(m => m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE').length,
+          workingCount: members.filter(m =>
+            m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE'
+          ).length,
           onMapCount: members.filter(m => m.is_sharing).length,
-        };
+        } as OrgWithStats;
       }));
     }
     setLoading(false);
@@ -194,17 +209,17 @@ export default function Organizations() {
     // Try camelCase first (the pattern the rest of the app uses),
     // fall back guidance is in the error message.
     const { data, error } = await supabase.from('organizations').insert([{
-      name:        form.name,
-      nameEn:      form.nameEn,
-      nameOm:      form.nameOm || null,
-      description: form.description || null,
-      color:       form.color,
-      bgColor:     form.color.replace('#', 'bg-[') + ']',
-      textColor:   'text-white',
-      icon:        form.icon,
-      hasGroups:   form.hasGroups,
-      memberCount: 0,
-      activeCount: 0,
+      name:         form.name,
+      name_en:      form.nameEn,
+      name_om:      form.nameOm || null,
+      description:  form.description || null,
+      color:        form.color,
+      bg_color:     `bg-[${form.color}]`,
+      text_color:   'text-white',
+      icon:         form.icon,
+      has_groups:   form.hasGroups,
+      member_count: 0,
+      active_count: 0,
     }]).select().single();
     setSaving(false);
     if (error) {
