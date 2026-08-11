@@ -11,6 +11,7 @@ import SearchBar from '../components/common/SearchBar';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
+import { mapMember, mapOrg, mapWorkLocation } from '../lib/mappers';
 
 // Fix default marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -36,6 +37,15 @@ const workLocationIcon = L.divIcon({
   iconAnchor: [12, 24],
   popupAnchor: [0, -24],
 });
+
+const createOfflineMarker = (color: string) =>
+  L.divIcon({
+    className: '',
+    html: `<div style="width:28px;height:28px;background:${color};opacity:0.4;border-radius:50%;border:2px dashed ${color};box-shadow:0 2px 8px rgba(0,0,0,0.2)"></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
 
 function MapCenterButton({ center }: { center: [number, number] }) {
   const map = useMap();
@@ -64,30 +74,92 @@ export default function LiveMap() {
   const [members, setMembers] = useState<Member[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [workLocations, setWorkLocations] = useState<WorkLocation[]>([]);
+  // Live GPS positions keyed by member_id — updated in real-time
+  const [livePositions, setLivePositions] = useState<
+    Record<string, { latitude: number; longitude: number; timestamp: string; is_sharing: boolean }>
+  >({});
 
   useEffect(() => {
     async function load() {
       const [{ data: membersData }, { data: orgsData }, { data: locsData }] = await Promise.all([
-        supabase.from('members').select('*, organization:organizations(*), lastLocation:gps_locations(*)').eq('isSharing', true),
+        supabase.from('members').select(`
+          *,
+          organization:organizations(*),
+          lastLocation:gps_locations(*)
+        `),
         supabase.from('organizations').select('*'),
         supabase.from('work_locations').select('*'),
       ]);
-      if (membersData) setMembers(membersData as Member[]);
-      if (orgsData) setOrganizations(orgsData as Organization[]);
-      if (locsData) setWorkLocations(locsData as WorkLocation[]);
+      if (membersData) {
+        const mapped = (membersData as Record<string, unknown>[]).map(mapMember);
+        setMembers(mapped);
+        // Seed livePositions from last known GPS
+        const initial: typeof livePositions = {};
+        mapped.forEach(m => {
+          if (m.lastLocation) {
+            initial[m.id] = {
+              latitude:  m.lastLocation.latitude,
+              longitude: m.lastLocation.longitude,
+              timestamp: m.lastLocation.timestamp,
+              is_sharing: m.isSharing ?? false,
+            };
+          }
+        });
+        setLivePositions(initial);
+      }
+      if (orgsData)    setOrganizations((orgsData as Record<string, unknown>[]).map(mapOrg));
+      if (locsData)    setWorkLocations((locsData as Record<string, unknown>[]).map(mapWorkLocation));
     }
     load();
+
+    // ── Real-time subscription to gps_locations ──────────────────────────
+    // Whenever a member's app inserts/updates a GPS row, the map updates instantly
+    const channel = supabase
+      .channel('live-gps')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gps_locations' },
+        payload => {
+          const row = payload.new as {
+            member_id: string;
+            latitude: number;
+            longitude: number;
+            timestamp: string;
+            is_sharing: boolean;
+          };
+          if (!row?.member_id) return;
+          setLivePositions(prev => ({
+            ...prev,
+            [row.member_id]: {
+              latitude:   row.latitude,
+              longitude:  row.longitude,
+              timestamp:  row.timestamp,
+              is_sharing: row.is_sharing,
+            },
+          }));
+          // Also update is_sharing on the member record
+          setMembers(prev => prev.map(m =>
+            m.id === row.member_id ? { ...m, isSharing: row.is_sharing } : m,
+          ));
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const activeMembers = members.filter(m => {
-    if (!m.isSharing || !m.lastLocation) return false;
+  // Members with a GPS location (live or last known)
+  const mappableMembers = members.filter(m => {
     if (selectedOrg && m.organizationId !== selectedOrg) return false;
     if (search) {
       const q = search.toLowerCase();
-      return m.fullName.toLowerCase().includes(q) || m.memberId.toLowerCase().includes(q);
+      if (!m.fullName.toLowerCase().includes(q) && !m.memberId.toLowerCase().includes(q)) return false;
     }
     return true;
   });
+
+  // Only GPS-sharing members for sidebar
+  const activeMembers = mappableMembers.filter(m => m.isSharing && m.lastLocation);
 
   const filteredLocations = workLocations.filter(l =>
     !selectedOrg || l.organizationId === selectedOrg
@@ -118,9 +190,15 @@ export default function LiveMap() {
           {t('map.workLocations')}
         </label>
 
-        <div className="ml-auto flex items-center gap-2 text-sm">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-gray-600 dark:text-gray-400">{activeMembers.length} {t('map.activeMembers')}</span>
+        <div className="ml-auto flex items-center gap-3 text-sm">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            <span className="text-gray-600 dark:text-gray-400">{activeMembers.length} live</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gray-400" />
+            <span className="text-gray-600 dark:text-gray-400">{mappableMembers.length - activeMembers.length} offline</span>
+          </span>
         </div>
       </div>
 
@@ -156,33 +234,62 @@ export default function LiveMap() {
               </div>
             ))}
 
-            {/* Member markers */}
-            {activeMembers.map(member => {
-              const loc = member.lastLocation!;
+            {/* Member markers — live GPS or work location pin */}
+            {mappableMembers.map(member => {
               const org = member.organization;
-              const icon = createColoredMarker(org?.color ?? '#22C55E');
+              const color = org?.color ?? '#22C55E';
+
+              // Use real-time position if available, fall back to work location
+              const live = livePositions[member.id];
+              const workLoc = member.workLocationId
+                ? workLocations.find(l => l.id === member.workLocationId)
+                : undefined;
+
+              const pos: [number, number] | null = live
+                ? [live.latitude, live.longitude]
+                : workLoc
+                  ? [workLoc.latitude, workLoc.longitude]
+                  : null;
+
+              if (!pos) return null;
+
+              const isLive = !!live && live.is_sharing;
+              const icon = isLive ? createColoredMarker(color) : createOfflineMarker(color);
+
               return (
                 <Marker
                   key={member.id}
-                  position={[loc.latitude, loc.longitude]}
+                  position={pos}
                   icon={icon}
                   eventHandlers={{ click: () => setSelectedMember(member) }}
                 >
                   <Popup>
                     <div className="p-1 min-w-[200px]">
                       <div className="flex items-center gap-2 mb-2">
-                        <img src={member.profilePhoto} alt={member.fullName} className="w-10 h-10 rounded-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        {member.profilePhoto && (
+                          <img src={member.profilePhoto} alt={member.fullName} className="w-10 h-10 rounded-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        )}
                         <div>
                           <p className="font-bold text-sm">{member.fullName}</p>
                           <p className="text-xs text-gray-500">{member.jobRole}</p>
                         </div>
                       </div>
                       <div className="space-y-1 text-xs text-gray-600">
-                        <div className="flex items-center gap-1"><Building2 size={11} /><span style={{ color: org?.color }}>{org?.name}</span></div>
+                        <div className="flex items-center gap-1">
+                          <Building2 size={11} />
+                          <span style={{ color }}>{org?.name}</span>
+                        </div>
                         <div className="flex items-center gap-1"><Phone size={11} />{member.phone}</div>
                         <div className="flex items-center gap-1"><MapPin size={11} />{member.workAddress}</div>
-                        <div className="flex items-center gap-1"><Navigation size={11} />{loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}</div>
-                        {loc.accuracy && <p className="text-gray-400">Accuracy: {loc.accuracy}m</p>}
+                        {isLive && live && (
+                          <div className="flex items-center gap-1">
+                            <Navigation size={11} />
+                            {live.latitude.toFixed(5)}, {live.longitude.toFixed(5)}
+                          </div>
+                        )}
+                        <p className={`font-medium ${isLive ? 'text-green-600' : 'text-gray-400'}`}>
+                          {isLive ? `🟢 Live — ${new Date(live.timestamp).toLocaleTimeString()}` : '⚫ Offline / No GPS'}
+                        </p>
                       </div>
                       <button
                         onClick={() => navigate(`/members/${member.id}`)}
@@ -205,13 +312,13 @@ export default function LiveMap() {
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
             <div className="flex items-center gap-2 mb-3">
               <Users size={15} className="text-green-600" />
-              <span className="text-sm font-semibold text-gray-900 dark:text-white">{t('map.activeMembers')}</span>
-              <span className="ml-auto text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full font-medium">{activeMembers.length}</span>
+              <span className="text-sm font-semibold text-gray-900 dark:text-white">Members</span>
+              <span className="ml-auto text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full font-medium">{mappableMembers.length}</span>
             </div>
             <div className="space-y-2">
-              {activeMembers.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">{t('map.noActiveMembers')}</p>
-              ) : activeMembers.map(m => (
+              {mappableMembers.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No members found</p>
+              ) : mappableMembers.map(m => (
                 <div
                   key={m.id}
                   onClick={() => setSelectedMember(m)}
@@ -223,8 +330,7 @@ export default function LiveMap() {
                   )}
                 >
                   <div className="relative shrink-0">
-                    <img src={m.profilePhoto} alt={m.fullName} className="w-8 h-8 rounded-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border border-white" />
+                    <Avatar src={m.profilePhoto} name={m.fullName} size="sm" online={m.isSharing} />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{m.fullName}</p>
