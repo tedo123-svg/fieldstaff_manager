@@ -7,6 +7,36 @@ import Button from '../common/Button';
 import Input from '../common/Input';
 import clsx from 'clsx';
 
+// Defined outside the parent so they are stable references and don't
+// trigger unmount/remount on every keystroke (which breaks focus).
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+      {children}
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+function SelectWrapper({ value, onChange, children, error }: { value: string; onChange: (v: string) => void; children: React.ReactNode; error?: string }) {
+  return (
+    <div>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={clsx(
+          'w-full rounded-lg border px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500',
+          error ? 'border-red-400' : 'border-gray-300 dark:border-gray-600'
+        )}
+      >
+        {children}
+      </select>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 interface MemberFormProps {
   initial?: Partial<Member>;
   onSubmit: (data: Partial<Member>) => void;
@@ -67,30 +97,6 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
     }
   };
 
-  const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
-      {children}
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
-  );
-
-  const Select = ({ value, onChange, children, error }: { value: string; onChange: (v: string) => void; children: React.ReactNode; error?: string }) => (
-    <div>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className={clsx(
-          'w-full rounded-lg border px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500',
-          error ? 'border-red-400' : 'border-gray-300 dark:border-gray-600'
-        )}
-      >
-        {children}
-      </select>
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
-  );
-
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Photo */}
@@ -114,19 +120,19 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
         <Input label={t('members.memberId')} required value={form.memberId ?? ''} onChange={e => set('memberId', e.target.value)} error={errors.memberId} />
 
         <Field label={t('members.gender')} error={errors.gender}>
-          <Select value={form.gender ?? 'MALE'} onChange={v => set('gender', v)}>
+          <SelectWrapper value={form.gender ?? 'MALE'} onChange={v => set('gender', v)}>
             <option value="MALE">{t('members.male')}</option>
             <option value="FEMALE">{t('members.female')}</option>
-          </Select>
+          </SelectWrapper>
         </Field>
 
         <Input label={t('members.phone')} required placeholder="+251912345678" value={form.phone ?? ''} onChange={e => set('phone', e.target.value)} error={errors.phone} />
 
         <Field label={t('members.organization')} error={errors.organizationId}>
-          <Select value={form.organizationId ?? ''} onChange={v => set('organizationId', v)} error={errors.organizationId}>
+          <SelectWrapper value={form.organizationId ?? ''} onChange={v => set('organizationId', v)} error={errors.organizationId}>
             <option value="">-- {t('members.organization')} --</option>
             {organizations.map((o: Organization) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </Select>
+          </SelectWrapper>
         </Field>
 
         <Input label={t('members.jobRole')} required value={form.jobRole ?? ''} onChange={e => set('jobRole', e.target.value)} error={errors.jobRole} />
@@ -136,20 +142,20 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
         </div>
 
         <Field label={t('members.workLocation')}>
-          <Select value={form.workLocationId ?? ''} onChange={v => set('workLocationId', v)}>
+          <SelectWrapper value={form.workLocationId ?? ''} onChange={v => set('workLocationId', v)}>
             <option value="">-- {t('members.workLocation')} --</option>
             {workLocations.map((l: WorkLocation) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </Select>
+          </SelectWrapper>
         </Field>
 
         <Input label={t('members.registrationDate')} type="date" value={form.registrationDate ?? ''} onChange={e => set('registrationDate', e.target.value)} />
 
         <Field label={t('members.status')}>
-          <Select value={form.status ?? 'ACTIVE'} onChange={v => set('status', v as Member['status'])}>
+          <SelectWrapper value={form.status ?? 'ACTIVE'} onChange={v => set('status', v as Member['status'])}>
             <option value="ACTIVE">{t('status.active')}</option>
             <option value="INACTIVE">{t('status.inactive')}</option>
             <option value="SUSPENDED">{t('status.suspended')}</option>
-          </Select>
+          </SelectWrapper>
         </Field>
 
         <Input label={t('members.emergencyContact')} required placeholder="+251911000000" value={form.emergencyContact ?? ''} onChange={e => set('emergencyContact', e.target.value)} error={errors.emergencyContact} />
