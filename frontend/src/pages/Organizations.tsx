@@ -168,7 +168,7 @@ export default function Organizations() {
     setLoading(true);
     const { data } = await supabase
       .from('organizations')
-      .select('*, members(id, status, isSharing, todayAttendance:attendances(status))');
+      .select('*, members(id, status, is_sharing, todayAttendance:attendances(status))');
     if (data) {
       setOrgs((data as unknown[]).map((org: unknown) => {
         const o = org as Organization & { members: { status: string; is_sharing: boolean; todayAttendance?: { status: string } }[] };
@@ -177,7 +177,7 @@ export default function Organizations() {
           ...o,
           membersCount: members.length,
           workingCount: members.filter(m => m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE').length,
-          onMapCount: members.filter(m => m.isSharing).length,
+          onMapCount: members.filter(m => m.is_sharing).length,
         };
       }));
     }
