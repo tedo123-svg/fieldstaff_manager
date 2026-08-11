@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Camera } from 'lucide-react';
-import type { Member } from '../../types';
-import { ORGANIZATIONS, WORK_LOCATIONS } from '../../data/mockData';
+import type { Member, Organization, WorkLocation } from '../../types';
+import { supabase } from '../../lib/supabase';
 import Button from '../common/Button';
 import Input from '../common/Input';
 import clsx from 'clsx';
@@ -25,6 +25,18 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [photoPreview, setPhotoPreview] = useState<string>(initial?.profilePhoto ?? '');
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [workLocations, setWorkLocations] = useState<WorkLocation[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('organizations').select('id, name'),
+      supabase.from('work_locations').select('id, name'),
+    ]).then(([{ data: orgs }, { data: locs }]) => {
+      if (orgs) setOrganizations(orgs as Organization[]);
+      if (locs) setWorkLocations(locs as WorkLocation[]);
+    });
+  }, []);
 
   const set = (k: keyof Member, v: unknown) => setForm(p => ({ ...p, [k]: v }));
 
@@ -113,7 +125,7 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
         <Field label={t('members.organization')} error={errors.organizationId}>
           <Select value={form.organizationId ?? ''} onChange={v => set('organizationId', v)} error={errors.organizationId}>
             <option value="">-- {t('members.organization')} --</option>
-            {ORGANIZATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {organizations.map((o: Organization) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </Select>
         </Field>
 
@@ -126,7 +138,7 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
         <Field label={t('members.workLocation')}>
           <Select value={form.workLocationId ?? ''} onChange={v => set('workLocationId', v)}>
             <option value="">-- {t('members.workLocation')} --</option>
-            {WORK_LOCATIONS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {workLocations.map((l: WorkLocation) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </Select>
         </Field>
 
