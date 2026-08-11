@@ -10,6 +10,7 @@ import Input from '../components/common/Input';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
+import { mapOrg, mapWoreda, mapGroup } from '../lib/mappers';
 
 // Only orgs 1,2,3 support groups — enforced by hasGroups flag on org
 function SelectEl({ label, value, onChange, disabled, children }: {
@@ -117,41 +118,17 @@ export default function Groups() {
     ]);
     if (grps) {
       setGroups((grps as Record<string, unknown>[]).map(g => ({
-        id:             g.id as string,
-        name:           g.name as string,
-        organizationId: (g.organization_id ?? g.organizationId) as string,
-        woredaId:       (g.woreda_id ?? g.woredaId) as string,
-        woreda:         g.woreda as Woreda | undefined,
-        memberCount:    (g.memberCount as { count: number }[])?.[0]?.count ?? 0,
+        ...mapGroup(g),
+        memberCount: (g.memberCount as { count: number }[])?.[0]?.count ?? 0,
       })));
     }
     if (orgData) {
-      const mapped = (orgData as Record<string, unknown>[]).map(o => ({
-        id:          o.id as string,
-        name:        o.name as string,
-        nameEn:      (o.name_en ?? o.nameEn ?? '') as string,
-        nameOm:      (o.name_om ?? o.nameOm ?? '') as string,
-        color:       (o.color ?? '#3B82F6') as string,
-        bgColor:     (o.bg_color ?? o.bgColor ?? '') as string,
-        textColor:   (o.text_color ?? o.textColor ?? 'text-white') as string,
-        icon:        (o.icon ?? '🔵') as string,
-        description: o.description as string | undefined,
-        hasGroups:   (o.has_groups ?? o.hasGroups ?? false) as boolean,
-        memberCount: (o.member_count ?? o.memberCount ?? 0) as number,
-        activeCount: (o.active_count ?? o.activeCount ?? 0) as number,
-      })) as Organization[];
+      const mapped = (orgData as Record<string, unknown>[]).map(mapOrg);
       setOrgs(mapped);
       setExpandedOrgs(new Set(mapped.map(o => o.id)));
     }
     if (sc) setSubcities(sc as Subcity[]);
-    if (wr) {
-      setAllWoredas((wr as Record<string, unknown>[]).map(w => ({
-        id:        w.id as string,
-        name:      w.name as string,
-        subcityId: (w.subcity_id ?? w.subcityId) as string,
-        subcity:   w.subcity as Subcity | undefined,
-      })));
-    }
+    if (wr) setAllWoredas((wr as Record<string, unknown>[]).map(mapWoreda));
     setLoading(false);
   }
 
@@ -168,14 +145,7 @@ export default function Groups() {
     setSaving(false);
     if (error) { toast.error('Failed to create group: ' + error.message); return; }
     const g = data as Record<string, unknown>;
-    setGroups(p => [...p, {
-      id:             g.id as string,
-      name:           g.name as string,
-      organizationId: (g.organization_id ?? g.organizationId) as string,
-      woredaId:       (g.woreda_id ?? g.woredaId) as string,
-      woreda:         g.woreda as Woreda | undefined,
-      memberCount:    0,
-    }]);
+    setGroups(p => [...p, { ...mapGroup(g), memberCount: 0 }]);
     setAddOpen(false);
     setForm(EMPTY_FORM);
     toast.success('Group created');
@@ -195,14 +165,10 @@ export default function Groups() {
     setSaving(false);
     if (error) { toast.error('Failed to update group: ' + error.message); return; }
     const g = data as Record<string, unknown>;
-    setGroups(p => p.map(gr => gr.id === editTarget.id ? {
-      id:             g.id as string,
-      name:           g.name as string,
-      organizationId: (g.organization_id ?? g.organizationId) as string,
-      woredaId:       (g.woreda_id ?? g.woredaId) as string,
-      woreda:         g.woreda as Woreda | undefined,
-      memberCount:    editTarget.memberCount,
-    } : gr));
+    setGroups(p => p.map(gr => gr.id === editTarget.id
+      ? { ...mapGroup(g), memberCount: editTarget.memberCount }
+      : gr
+    ));
     setEditTarget(null);
     setForm(EMPTY_FORM);
     toast.success('Group updated');

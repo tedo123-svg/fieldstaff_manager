@@ -4,6 +4,7 @@ import { ArrowLeft, Phone, MapPin, Navigation, Calendar, Edit, Trash2, Clock } f
 import { useState, useEffect } from 'react';
 import type { Member } from '../types';
 import { supabase } from '../lib/supabase';
+import { mapMember } from '../lib/mappers';
 import Avatar from '../components/common/Avatar';
 import Badge from '../components/common/Badge';
 import Card from '../components/common/Card';
@@ -64,7 +65,7 @@ export default function MemberDetail() {
       .eq('id', id)
       .single()
       .then(({ data }) => {
-        if (data) setMember(data as Member);
+        if (data) setMember(mapMember(data as Record<string, unknown>));
         setLoading(false);
       });
   }, [id]);
@@ -97,20 +98,20 @@ export default function MemberDetail() {
     const { data: updated, error } = await supabase
       .from('members')
       .update({
-        fullName:         data.fullName,
-        gender:           data.gender,
-        phone:            data.phone,
-        jobRole:          data.jobRole,
-        workAddress:      data.workAddress,
-        emergencyContact: data.emergencyContact,
-        notes:            data.notes,
-        status:           data.status,
+        full_name:         data.fullName,
+        gender:            data.gender,
+        phone:             data.phone,
+        job_role:          data.jobRole,
+        work_address:      data.workAddress,
+        emergency_contact: data.emergencyContact,
+        notes:             data.notes,
+        status:            data.status,
       })
       .eq('id', member.id)
       .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')
       .single();
     if (error) { toast.error('Failed to update member'); return; }
-    setMember(updated as Member);
+    setMember(mapMember(updated as Record<string, unknown>));
     setEditOpen(false);
     toast.success('Member updated successfully');
   };

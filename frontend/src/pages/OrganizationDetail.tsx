@@ -7,6 +7,7 @@ import MemberCard from '../components/members/MemberCard';
 import Card from '../components/common/Card';
 import AttendanceChart from '../components/charts/AttendanceChart';
 import { supabase } from '../lib/supabase';
+import { mapOrg, mapMember, mapWorkLocation, mapGroup } from '../lib/mappers';
 
 export default function OrganizationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -36,35 +37,16 @@ export default function OrganizationDetail() {
         supabase.from('work_locations').select('*').eq('organization_id', id),
       ]);
       if (orgData) {
-        const o = orgData as Record<string, unknown>;
-        setOrg({
-          id:          o.id as string,
-          name:        o.name as string,
-          nameEn:      (o.name_en ?? o.nameEn ?? '') as string,
-          nameOm:      (o.name_om ?? o.nameOm ?? '') as string,
-          color:       (o.color ?? '#3B82F6') as string,
-          bgColor:     (o.bg_color ?? o.bgColor ?? '') as string,
-          textColor:   (o.text_color ?? o.textColor ?? 'text-white') as string,
-          icon:        (o.icon ?? '🔵') as string,
-          description: o.description as string | undefined,
-          hasGroups:   (o.has_groups ?? o.hasGroups ?? false) as boolean,
-          memberCount: (o.member_count ?? o.memberCount ?? 0) as number,
-          activeCount: (o.active_count ?? o.activeCount ?? 0) as number,
-        });
+        setOrg(mapOrg(orgData as Record<string, unknown>));
       }
-      if (membersData) setMembers(membersData as Member[]);
-      if (locsData) setLocations(locsData as WorkLocation[]);
+      if (membersData) setMembers((membersData as Record<string, unknown>[]).map(mapMember));
+      if (locsData) setLocations((locsData as Record<string, unknown>[]).map(mapWorkLocation));
 
       // groups table only exists after migration — try gracefully
       const { data: grpsData } = await supabase
         .from('groups').select('*').eq('organization_id', id).order('name');
       if (grpsData) {
-        const grps = (grpsData as Record<string, unknown>[]).map(g => ({
-          id:             g.id as string,
-          name:           g.name as string,
-          organizationId: (g.organization_id ?? g.organizationId) as string,
-          woredaId:       (g.woreda_id ?? g.woredaId) as string,
-        })) as Group[];
+        const grps = (grpsData as Record<string, unknown>[]).map(mapGroup);
         setGroups(grps);
         setExpandedGroups(new Set(grps.map(g => g.id)));
       }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Camera } from 'lucide-react';
 import type { Member, Organization, WorkLocation, Subcity, Woreda, Group } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { mapOrg, mapWoreda, mapGroup, mapWorkLocation } from '../../lib/mappers';
 import Button from '../common/Button';
 import Input from '../common/Input';
 import clsx from 'clsx';
@@ -83,16 +84,16 @@ export default function MemberForm({ initial, onSubmit, onCancel, loading }: Mem
   useEffect(() => {
     Promise.all([
       supabase.from('subcities').select('*').order('name'),
-      supabase.from('woredas').select('*').order('name'),
+      supabase.from('woredas').select('*, subcity:subcities(*)').order('name'),
       supabase.from('organizations').select('*').order('name'),
       supabase.from('groups').select('*').order('name'),
-      supabase.from('work_locations').select('id, name').order('name'),
+      supabase.from('work_locations').select('id, name, address, latitude, longitude, organization_id, working_hours_start, working_hours_end, geofence_radius, status').order('name'),
     ]).then(([{ data: sc }, { data: wr }, { data: orgs }, { data: grps }, { data: locs }]) => {
       if (sc)   setSubcities(sc as Subcity[]);
-      if (wr)   setAllWoredas(wr as Woreda[]);
-      if (orgs) setOrganizations(orgs as Organization[]);
-      if (grps) setAllGroups(grps as Group[]);
-      if (locs) setWorkLocations(locs as WorkLocation[]);
+      if (wr)   setAllWoredas((wr as Record<string, unknown>[]).map(mapWoreda));
+      if (orgs) setOrganizations((orgs as Record<string, unknown>[]).map(mapOrg));
+      if (grps) setAllGroups((grps as Record<string, unknown>[]).map(mapGroup));
+      if (locs) setWorkLocations((locs as Record<string, unknown>[]).map(mapWorkLocation));
     });
   }, []);
 

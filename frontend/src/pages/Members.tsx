@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
+import { mapMember, mapOrg, mapWoreda, mapGroup } from '../lib/mappers';
 
 // ── Defined OUTSIDE the component so React never remounts it ──────────────
 // Defining components inside another component causes them to be seen as a
@@ -65,7 +66,6 @@ export default function Members() {
     async function load() {
       setLoading(true);
 
-      // Base member query — only join tables that exist in the current schema
       const { data: membersData } = await supabase.from('members').select(`
         *,
         organization:organizations(*),
@@ -74,20 +74,16 @@ export default function Members() {
         todayAttendance:attendances(*)
       `);
 
-      const { data: orgsData } = await supabase.from('organizations').select('*');
+      const { data: orgsData }    = await supabase.from('organizations').select('*');
+      const { data: scData }      = await supabase.from('subcities').select('*').order('name');
+      const { data: wrData }      = await supabase.from('woredas').select('*, subcity:subcities(*)').order('name');
+      const { data: grpData }     = await supabase.from('groups').select('*').order('name');
 
-      // These tables only exist after running 001_hierarchy_schema.sql migration
-      const [{ data: scData }, { data: wrData }, { data: grpData }] = await Promise.allSettled([
-        supabase.from('subcities').select('*').order('name'),
-        supabase.from('woredas').select('*').order('name'),
-        supabase.from('groups').select('*').order('name'),
-      ]).then(results => results.map(r => r.status === 'fulfilled' ? r.value : { data: null }));
-
-      if (membersData) setMembers(membersData as Member[]);
-      if (orgsData)    setOrganizations(orgsData as Organization[]);
+      if (membersData) setMembers((membersData as Record<string, unknown>[]).map(mapMember));
+      if (orgsData)    setOrganizations((orgsData as Record<string, unknown>[]).map(mapOrg));
       if (scData)      setSubcities(scData as Subcity[]);
-      if (wrData)      setAllWoredas(wrData as Woreda[]);
-      if (grpData)     setAllGroups(grpData as Group[]);
+      if (wrData)      setAllWoredas((wrData as Record<string, unknown>[]).map(mapWoreda));
+      if (grpData)     setAllGroups((grpData as Record<string, unknown>[]).map(mapGroup));
       setLoading(false);
     }
     load();
