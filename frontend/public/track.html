@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>FieldStaff — GPS Share</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 1.25rem;
+      padding: 2rem 1.5rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    .logo {
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; font-weight: 900; color: white;
+      margin: 0 auto 1rem;
+    }
+
+    h1 { text-align: center; font-size: 1.2rem; font-weight: 700; color: #f1f5f9; }
+    p.sub { text-align: center; font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem; margin-bottom: 1.5rem; }
+
+    label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.4rem; font-weight: 500; }
+
+    input {
+      width: 100%;
+      background: #0f172a;
+      border: 1.5px solid #334155;
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      color: #f1f5f9;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 1rem;
+    }
+    input:focus { border-color: #22c55e; }
+    input::placeholder { color: #475569; }
+
+    .btn {
+      width: 100%;
+      padding: 0.875rem;
+      border-radius: 0.875rem;
+      border: none;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    }
+    .btn-green { background: linear-gradient(135deg, #16a34a, #22c55e); color: white; }
+    .btn-green:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-red { background: linear-gradient(135deg, #dc2626, #ef4444); color: white; }
+    .btn-red:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .status-box {
+      background: #0f172a;
+      border-radius: 0.875rem;
+      padding: 1rem;
+      margin-top: 1.25rem;
+      display: none;
+    }
+    .status-box.show { display: block; }
+
+    .status-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .status-row:last-child { margin-bottom: 0; }
+    .status-label { font-size: 0.75rem; color: #64748b; }
+    .status-value { font-size: 0.8rem; font-weight: 600; color: #e2e8f0; font-family: monospace; }
+
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      display: inline-block; margin-right: 6px;
+    }
+    .dot-green { background: #22c55e; animation: pulse 1.5s infinite; }
+    .dot-gray  { background: #475569; }
+    .dot-red   { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.6; transform: scale(0.85); }
+    }
+
+    .member-info {
+      display: flex; align-items: center; gap: 0.75rem;
+      background: #0f172a; border-radius: 0.875rem;
+      padding: 0.875rem 1rem; margin-bottom: 1.25rem;
+      display: none;
+    }
+    .member-info.show { display: flex; }
+    .member-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: #22c55e; display: flex; align-items: center;
+      justify-content: center; font-weight: 700; font-size: 1rem; color: white;
+      flex-shrink: 0;
+    }
+    .member-name { font-weight: 600; font-size: 0.9rem; }
+    .member-org  { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+
+    .error {
+      background: #450a0a; border: 1px solid #991b1b;
+      border-radius: 0.75rem; padding: 0.75rem 1rem;
+      color: #fca5a5; font-size: 0.85rem;
+      margin-bottom: 1rem; display: none;
+    }
+    .error.show { display: block; }
+
+    .accuracy-bar {
+      height: 4px; background: #1e3a2f; border-radius: 2px;
+      margin-top: 0.5rem; overflow: hidden;
+    }
+    .accuracy-fill {
+      height: 100%; background: #22c55e;
+      border-radius: 2px; transition: width 0.5s;
+    }
+
+    .update-count {
+      text-align: center; font-size: 0.7rem; color: #334155;
+      margin-top: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">FS</div>
+    <h1>FieldStaff GPS</h1>
+    <p class="sub">የሥራ ቦታ ክትትል / Location Tracking</p>
+
+    <!-- Login form -->
+    <div id="loginSection">
+      <div class="error" id="errorBox"></div>
+      <label for="memberIdInput">Member ID *</label>
+      <input
+        type="text"
+        id="memberIdInput"
+        placeholder="e.g. FS-001"
+        autocomplete="off"
+        autocapitalize="none"
+      />
+      <button class="btn btn-green" id="startBtn" onclick="findMember()">
+        🔍 Find &amp; Start Tracking
+      </button>
+    </div>
+
+    <!-- Member info (shown after lookup) -->
+    <div class="member-info" id="memberInfo">
+      <div class="member-avatar" id="memberAvatar">?</div>
+      <div>
+        <div class="member-name" id="memberName">—</div>
+        <div class="member-org"  id="memberOrg">—</div>
+      </div>
+    </div>
+
+    <!-- Tracking controls (shown after member found) -->
+    <div id="trackingSection" style="display:none">
+      <button class="btn btn-green" id="trackBtn" onclick="startTracking()">
+        📡 Start Sharing Location
+      </button>
+      <button class="btn btn-red" id="stopBtn" onclick="stopTracking()" style="margin-top:0.75rem; display:none">
+        ⛔ Stop Sharing
+      </button>
+
+      <div class="status-box" id="statusBox">
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span class="status-value" id="statusText">
+            <span class="dot dot-gray"></span>Idle
+          </span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Latitude</span>
+          <span class="status-value" id="latText">—</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Longitude</span>
+          <span class="status-value" id="lngText">—</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Accuracy</span>
+          <span class="status-value" id="accText">—</span>
+        </div>
+        <div class="accuracy-bar">
+          <div class="accuracy-fill" id="accBar" style="width:0%"></div>
+        </div>
+        <div class="status-row" style="margin-top:0.5rem">
+          <span class="status-label">Last update</span>
+          <span class="status-value" id="timeText">—</span>
+        </div>
+      </div>
+
+      <div class="update-count" id="updateCount"></div>
+    </div>
+  </div>
+
+  <script>
+    // ── Config ────────────────────────────────────────────────────────────
+    const SUPABASE_URL     = 'https://rfiurmccfgshlabpyqps.supabase.co';
+    const SUPABASE_ANON    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmaXVybWNjZmdzaGxhYnB5cXBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjgxNzQsImV4cCI6MjEwMTk0NDE3NH0.zlOrNqirNh-ENYlIRWRfmzw-E8aqadxhRsR_WFMANgo';
+    const INTERVAL_MS      = 10000; // send GPS every 10 seconds
+
+    let memberId   = null;  // DB uuid
+    let watchId    = null;  // geolocation watchPosition id
+    let intervalId = null;  // setInterval id
+    let lastPos    = null;  // last GeolocationPosition
+    let updatesCnt = 0;
+
+    // ── REST helpers (no SDK needed) ──────────────────────────────────────
+    async function sbFetch(path, options = {}) {
+      const res = await fetch(SUPABASE_URL + path, {
+        ...options,
+        headers: {
+          'apikey':        SUPABASE_ANON,
+          'Authorization': 'Bearer ' + SUPABASE_ANON,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+          ...(options.headers || {}),
+        },
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt);
+      }
+      return options.method === 'POST' || options.method === 'PATCH' ? null : res.json();
+    }
+
+    // ── Find member by member_id text field ───────────────────────────────
+    async function findMember() {
+      const input = document.getElementById('memberIdInput').value.trim();
+      if (!input) { showError('Please enter your Member ID'); return; }
+
+      const btn = document.getElementById('startBtn');
+      btn.disabled = true;
+      btn.textContent = 'Searching…';
+      hideError();
+
+      try {
+        const rows = await sbFetch(
+          `/rest/v1/members?member_id=eq.${encodeURIComponent(input)}&select=id,full_name,member_id,organization:organizations(name)&limit=1`
+        );
+        if (!rows || rows.length === 0) {
+          showError('Member ID not found. Check and try again.');
+          btn.disabled = false;
+          btn.textContent = '🔍 Find & Start Tracking';
+          return;
+        }
+        const m = rows[0];
+        memberId = m.id;
+
+        // Show member info
+        document.getElementById('memberAvatar').textContent = (m.full_name || '?')[0].toUpperCase();
+        document.getElementById('memberName').textContent   = m.full_name;
+        document.getElementById('memberOrg').textContent    = m.organization?.name || '—';
+        document.getElementById('memberInfo').classList.add('show');
+
+        // Hide login, show tracking
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('trackingSection').style.display = 'block';
+
+      } catch (e) {
+        showError('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '🔍 Find & Start Tracking';
+      }
+    }
+
+    // ── Start GPS tracking ────────────────────────────────────────────────
+    function startTracking() {
+      if (!navigator.geolocation) {
+        showError('Geolocation not supported on this device');
+        return;
+      }
+
+      document.getElementById('trackBtn').style.display  = 'none';
+      document.getElementById('stopBtn').style.display   = 'block';
+      document.getElementById('statusBox').classList.add('show');
+      setStatus('green', 'Acquiring GPS…');
+
+      // Watch position continuously
+      watchId = navigator.geolocation.watchPosition(
+        pos => {
+          lastPos = pos;
+          updateDisplay(pos);
+        },
+        err => {
+          setStatus('red', 'GPS Error: ' + err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 5000 }
+      );
+
+      // Send to Supabase on interval
+      intervalId = setInterval(async () => {
+        if (!lastPos) return;
+        await sendLocation(lastPos);
+      }, INTERVAL_MS);
+
+      // Send immediately on first fix
+      navigator.geolocation.getCurrentPosition(async pos => {
+        lastPos = pos;
+        updateDisplay(pos);
+        await sendLocation(pos);
+      }, () => {}, { enableHighAccuracy: true });
+    }
+
+    // ── Stop GPS tracking ────────────────────────────────────────────────
+    async function stopTracking() {
+      if (watchId !== null)    { navigator.geolocation.clearWatch(watchId); watchId = null; }
+      if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
+
+      // Mark as not sharing
+      try {
+        await sbFetch(`/rest/v1/gps_locations?member_id=eq.${memberId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_sharing: false, device_status: 'OFFLINE' }),
+        });
+        // Also update members table
+        await sbFetch(`/rest/v1/members?id=eq.${memberId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_sharing: false }),
+        });
+      } catch (_) {}
+
+      document.getElementById('trackBtn').style.display = 'block';
+      document.getElementById('stopBtn').style.display  = 'none';
+      setStatus('gray', 'Stopped');
+      updatesCnt = 0;
+      document.getElementById('updateCount').textContent = '';
+    }
+
+    // ── Send one GPS fix to Supabase ──────────────────────────────────────
+    async function sendLocation(pos) {
+      const { latitude, longitude, accuracy } = pos.coords;
+      try {
+        // Upsert into gps_locations (one row per member — always update same row)
+        await sbFetch(`/rest/v1/gps_locations?member_id=eq.${memberId}`, {
+          method: 'PATCH',
+          headers: { 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            latitude,
+            longitude,
+            accuracy,
+            timestamp:     new Date().toISOString(),
+            is_sharing:    true,
+            device_status: 'ONLINE',
+          }),
+        });
+
+        // If no row existed yet, insert
+        const rows = await sbFetch(
+          `/rest/v1/gps_locations?member_id=eq.${memberId}&select=id&limit=1`
+        );
+        if (!rows || rows.length === 0) {
+          await sbFetch('/rest/v1/gps_locations', {
+            method: 'POST',
+            headers: { 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+              member_id:     memberId,
+              latitude,
+              longitude,
+              accuracy,
+              timestamp:     new Date().toISOString(),
+              is_sharing:    true,
+              device_status: 'ONLINE',
+            }),
+          });
+        }
+
+        // Update member is_sharing flag
+        await sbFetch(`/rest/v1/members?id=eq.${memberId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_sharing: true }),
+        });
+
+        updatesCnt++;
+        document.getElementById('updateCount').textContent =
+          `✓ ${updatesCnt} location update${updatesCnt !== 1 ? 's' : ''} sent`;
+        setStatus('green', 'Sharing Live');
+      } catch (e) {
+        setStatus('red', 'Send failed — retrying…');
+        console.error(e);
+      }
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────
+    function updateDisplay(pos) {
+      const { latitude, longitude, accuracy } = pos.coords;
+      document.getElementById('latText').textContent  = latitude.toFixed(6);
+      document.getElementById('lngText').textContent  = longitude.toFixed(6);
+      document.getElementById('accText').textContent  = Math.round(accuracy) + ' m';
+      document.getElementById('timeText').textContent = new Date().toLocaleTimeString();
+      // Accuracy bar: 100% = 5m, 0% = 500m+
+      const pct = Math.max(0, Math.min(100, 100 - (accuracy / 5)));
+      document.getElementById('accBar').style.width = pct + '%';
+    }
+
+    function setStatus(color, text) {
+      const dotClass = { green: 'dot-green', gray: 'dot-gray', red: 'dot-red' }[color] || 'dot-gray';
+      document.getElementById('statusText').innerHTML =
+        `<span class="dot ${dotClass}"></span>${text}`;
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorBox');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+    function hideError() {
+      document.getElementById('errorBox').classList.remove('show');
+    }
+
+    // Allow pressing Enter in the input
+    document.getElementById('memberIdInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') findMember();
+    });
+
+    // Stop sharing when page is closed/hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && intervalId !== null) {
+        stopTracking();
+      }
+    });
+  </script>
+</body>
+</html>

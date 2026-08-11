@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UserPlus, LayoutGrid, List, SlidersHorizontal, Users } from 'lucide-react';
+import { UserPlus, LayoutGrid, List, SlidersHorizontal, Users, Link as LinkIcon } from 'lucide-react';
 import type { Member, Organization, Subcity, Woreda, Group, MemberFilters } from '../types';
 import MemberCard from '../components/members/MemberCard';
 import Modal from '../components/common/Modal';
@@ -170,6 +170,18 @@ export default function Members() {
             {filtered.length} {t('members.title').toLowerCase()}
           </p>
         </div>
+        <Button
+          variant="outline" size="sm"
+          icon={<LinkIcon size={14} />}
+          onClick={() => {
+            const url = `${window.location.origin}/track.html`;
+            navigator.clipboard.writeText(url).then(() =>
+              toast.success('Tracking link copied! Share with members.')
+            );
+          }}
+        >
+          Copy Tracking Link
+        </Button>
         <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>
           {t('members.addMember')}
         </Button>
