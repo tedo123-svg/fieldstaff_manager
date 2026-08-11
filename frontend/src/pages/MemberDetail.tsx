@@ -41,7 +41,16 @@ export default function MemberDetail() {
     if (!id) return;
     supabase
       .from('members')
-      .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')
+      .select(`
+        *,
+        organization:organizations(*),
+        group:groups(*),
+        woreda:woredas(*),
+        subcity:subcities(*),
+        workLocation:work_locations(*),
+        lastLocation:gps_locations(*),
+        todayAttendance:attendances(*)
+      `)
       .eq('id', id)
       .single()
       .then(({ data }) => {
@@ -184,6 +193,9 @@ export default function MemberDetail() {
 
           <Card>
             <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Work Information</h4>
+            {member.subcity && <InfoRow icon={MapPin} label="ክፍለ ከተማ (Subcity)" value={member.subcity.name} />}
+            {member.woreda  && <InfoRow icon={MapPin} label="ወረዳ (Woreda)"        value={member.woreda.name} />}
+            {member.group   && <InfoRow icon={MapPin} label="ቡድን (Group)"          value={member.group.name} />}
             <InfoRow icon={MapPin} label={t('members.jobRole')} value={member.jobRole} />
             <InfoRow icon={MapPin} label={t('members.workAddress')} value={member.workAddress} />
             {member.workLocation && <InfoRow icon={MapPin} label={t('members.workLocation')} value={member.workLocation.name} />}

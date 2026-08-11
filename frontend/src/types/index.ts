@@ -4,6 +4,9 @@ export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'CHECKED_OUT' | '
 export type LocationStatus = 'AT_WORK' | 'NEARBY' | 'OUTSIDE' | 'OFFLINE';
 export type Gender = 'MALE' | 'FEMALE';
 
+// IDs of orgs that support groups (1st, 2nd, 3rd organizations)
+export const GROUP_ORG_SLUGS = ['loader-unloader', 'parking', 'queue-controller'] as const;
+
 export interface User {
   id: string;
   email: string;
@@ -11,6 +14,28 @@ export interface User {
   role: Role;
   organizationId?: string;
   avatar?: string;
+}
+
+export interface Subcity {
+  id: string;
+  name: string;
+}
+
+export interface Woreda {
+  id: string;
+  name: string;
+  subcityId: string;
+  subcity?: Subcity;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  organizationId: string;
+  organization?: Organization;
+  woredaId: string;
+  woreda?: Woreda;
+  memberCount?: number;
 }
 
 export interface Organization {
@@ -25,6 +50,7 @@ export interface Organization {
   description?: string;
   memberCount: number;
   activeCount: number;
+  hasGroups: boolean;  // true for orgs 1, 2, 3
 }
 
 export interface Member {
@@ -36,6 +62,12 @@ export interface Member {
   profilePhoto?: string;
   organizationId: string;
   organization?: Organization;
+  groupId?: string;           // only for orgs 1, 2, 3
+  group?: Group;
+  woredaId?: string;
+  woreda?: Woreda;
+  subcityId?: string;
+  subcity?: Subcity;
   jobRole: string;
   workAddress: string;
   workLocationId?: string;
@@ -134,11 +166,17 @@ export interface ReportFilter {
   organizationId?: string;
   memberId?: string;
   workLocationId?: string;
+  woredaId?: string;
+  subcityId?: string;
+  groupId?: string;
 }
 
 export interface MemberFilters {
   search: string;
   organizationId: string;
+  subcityId: string;
+  woredaId: string;
+  groupId: string;
   status: string;
   locationStatus: string;
   attendanceStatus: string;

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Users, UserCheck, Briefcase, MapPin } from 'lucide-react';
-import type { Organization, Member, WorkLocation } from '../types';
+import { ArrowLeft, Users, UserCheck, Briefcase, MapPin, ChevronDown, ChevronRight } from 'lucide-react';
+import type { Organization, Member, WorkLocation, Group } from '../types';
 import MemberCard from '../components/members/MemberCard';
 import Card from '../components/common/Card';
 import AttendanceChart from '../components/charts/AttendanceChart';
@@ -16,20 +16,38 @@ export default function OrganizationDetail() {
   const [org, setOrg] = useState<Organization | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [locations, setLocations] = useState<WorkLocation[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function load() {
       if (!id) return;
       setLoading(true);
-      const [{ data: orgData }, { data: membersData }, { data: locsData }] = await Promise.all([
+      const [{ data: orgData }, { data: membersData }, { data: locsData }, { data: grpsData }] = await Promise.all([
         supabase.from('organizations').select('*').eq('id', id).single(),
-        supabase.from('members').select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)').eq('organization_id', id),
+        supabase.from('members').select(`
+          *,
+          organization:organizations(*),
+          group:groups(*),
+          woreda:woredas(*),
+          subcity:subcities(*),
+          workLocation:work_locations(*),
+          lastLocation:gps_locations(*),
+          todayAttendance:attendances(*)
+        `).eq('organization_id', id),
         supabase.from('work_locations').select('*').eq('organization_id', id),
+        supabase.from('groups').select('*').eq('organization_id', id).order('name'),
       ]);
       if (orgData) setOrg(orgData as Organization);
       if (membersData) setMembers(membersData as Member[]);
       if (locsData) setLocations(locsData as WorkLocation[]);
+      if (grpsData) {
+        const grps = grpsData as Group[];
+        setGroups(grps);
+        // expand all groups by default
+        setExpandedGroups(new Set(grps.map(g => g.id)));
+      }
       setLoading(false);
     }
     load();
@@ -49,12 +67,22 @@ export default function OrganizationDetail() {
   if (!org) return <div className="p-8 text-gray-400">Organization not found</div>;
 
   const working = members.filter(m => m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE').length;
-  const onMap = members.filter(m => m.isSharing).length;
-  const active = members.filter(m => m.status === 'ACTIVE').length;
+  const onMap   = members.filter(m => m.isSharing).length;
+  const active  = members.filter(m => m.status === 'ACTIVE').length;
+
+  const toggleGroup = (gId: string) =>
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      next.has(gId) ? next.delete(gId) : next.add(gId);
+      return next;
+    });
+
+  // Members that belong to no group (for orgs without groups, or ungrouped members)
+  const ungroupedMembers = members.filter(m => !m.groupId);
 
   return (
     <div className="space-y-6">
-      {/* Back button + Header */}
+      {/* Back + Header */}
       <div className="flex items-center gap-4">
         <button onClick={() => navigate(-1)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
           <ArrowLeft size={20} />
@@ -73,10 +101,10 @@ export default function OrganizationDetail() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { icon: Users, label: t('orgs.totalMembers'), value: members.length, color: org.color },
-          { icon: UserCheck, label: t('orgs.activeMembers'), value: active, color: '#22C55E' },
-          { icon: Briefcase, label: t('orgs.working'), value: working, color: '#A855F7' },
-          { icon: MapPin, label: t('orgs.onMap'), value: onMap, color: '#14B8A6' },
+          { icon: Users,     label: t('orgs.totalMembers'),  value: members.length, color: org.color },
+          { icon: UserCheck, label: t('orgs.activeMembers'), value: active,         color: '#22C55E' },
+          { icon: Briefcase, label: t('orgs.working'),       value: working,        color: '#A855F7' },
+          { icon: MapPin,    label: t('orgs.onMap'),         value: onMap,          color: '#14B8A6' },
         ].map(({ icon: Icon, label, value, color }) => (
           <Card key={label} className="text-center">
             <div className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: color + '20' }}>
@@ -89,13 +117,11 @@ export default function OrganizationDetail() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Attendance chart */}
         <Card className="xl:col-span-2">
           <h3 className="font-semibold text-gray-900 dark:text-white mb-4">{t('attendance.summary')}</h3>
           <AttendanceChart />
         </Card>
 
-        {/* Work locations */}
         <Card>
           <h3 className="font-semibold text-gray-900 dark:text-white mb-4">{t('workLocations.title')}</h3>
           <div className="space-y-3">
@@ -112,17 +138,76 @@ export default function OrganizationDetail() {
         </Card>
       </div>
 
-      {/* Member grid */}
-      <div>
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">{t('members.title')} ({members.length})</h3>
-        {members.length === 0 ? (
-          <p className="text-gray-400">{t('members.noMembers')}</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {members.map(m => <MemberCard key={m.id} member={m} />)}
-          </div>
-        )}
-      </div>
+      {/* Members — grouped view for orgs that have groups */}
+      {org.hasGroups && groups.length > 0 ? (
+        <div className="space-y-4">
+          <h3 className="font-semibold text-gray-900 dark:text-white">
+            ቡድኖች (Groups) — {groups.length} groups, {members.length} members
+          </h3>
+
+          {groups.map(group => {
+            const groupMembers = members.filter(m => m.groupId === group.id);
+            const isExpanded = expandedGroups.has(group.id);
+            const hasMinMembers = groupMembers.length >= 2;
+
+            return (
+              <div key={group.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                {/* Group header */}
+                <button
+                  onClick={() => toggleGroup(group.id)}
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+                >
+                  {isExpanded ? <ChevronDown size={16} className="text-gray-400 shrink-0" /> : <ChevronRight size={16} className="text-gray-400 shrink-0" />}
+                  <span className="font-semibold text-gray-900 dark:text-white flex-1">{group.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${hasMinMembers ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'}`}>
+                    {groupMembers.length} {groupMembers.length === 1 ? 'member' : 'members'}
+                    {!hasMinMembers && ' ⚠ min 2 required'}
+                  </span>
+                </button>
+
+                {/* Group members */}
+                {isExpanded && (
+                  <div className="px-5 pb-5 border-t border-gray-100 dark:border-gray-700">
+                    {groupMembers.length === 0 ? (
+                      <p className="text-sm text-gray-400 py-4 text-center">No members in this group yet</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mt-4">
+                        {groupMembers.map(m => <MemberCard key={m.id} member={m} />)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Ungrouped members warning */}
+          {ungroupedMembers.length > 0 && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-400 mb-3">
+                ⚠ {ungroupedMembers.length} member(s) not assigned to a group
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {ungroupedMembers.map(m => <MemberCard key={m.id} member={m} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Flat list for orgs 4 & 5 */
+        <div>
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
+            {t('members.title')} ({members.length})
+          </h3>
+          {members.length === 0 ? (
+            <p className="text-gray-400">{t('members.noMembers')}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {members.map(m => <MemberCard key={m.id} member={m} />)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

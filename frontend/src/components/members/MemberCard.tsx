@@ -58,12 +58,26 @@ export default function MemberCard({ member }: MemberCardProps) {
         <Badge label={memStatus.label} variant={memStatus.variant} size="sm" />
       </div>
 
-      {/* Org */}
-      <div
-        className={clsx('px-2 py-1 rounded-lg text-xs font-medium')}
-        style={{ backgroundColor: member.organization?.color + '20', color: member.organization?.color }}
-      >
-        {member.organization?.name}
+      {/* Org + Group */}
+      <div className="space-y-1">
+        <div
+          className="px-2 py-1 rounded-lg text-xs font-medium"
+          style={{ backgroundColor: member.organization?.color + '20', color: member.organization?.color }}
+        >
+          {member.organization?.name}
+        </div>
+        {member.group && (
+          <div className="px-2 py-1 rounded-lg text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+            ቡድን: {member.group.name}
+          </div>
+        )}
+        {(member.woreda || member.subcity) && (
+          <div className="flex items-center gap-1 text-[10px] text-gray-400">
+            {member.subcity && <span>{member.subcity.name}</span>}
+            {member.subcity && member.woreda && <span>›</span>}
+            {member.woreda && <span>{member.woreda.name}</span>}
+          </div>
+        )}
       </div>
 
       {/* Info */}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserPlus, LayoutGrid, List, SlidersHorizontal, Users } from 'lucide-react';
-import type { Member, Organization, MemberFilters } from '../types';
+import type { Member, Organization, Subcity, Woreda, Group, MemberFilters } from '../types';
 import MemberCard from '../components/members/MemberCard';
 import Modal from '../components/common/Modal';
 import MemberForm from '../components/members/MemberForm';
@@ -14,39 +14,95 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
 
+function SelectFilter({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+      <select
+        value={value} onChange={e => onChange(e.target.value)}
+        className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+      >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 export default function Members() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+
   const [members, setMembers] = useState<Member[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [subcities, setSubcities] = useState<Subcity[]>([]);
+  const [allWoredas, setAllWoredas] = useState<Woreda[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [addOpen, setAddOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
   const [filters, setFilters] = useState<MemberFilters>({
-    search: '', organizationId: '', status: '', locationStatus: '', attendanceStatus: '', isSharing: '',
+    search: '', organizationId: '', subcityId: '', woredaId: '', groupId: '',
+    status: '', locationStatus: '', attendanceStatus: '', isSharing: '',
   });
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [{ data: membersData }, { data: orgsData }] = await Promise.all([
-        supabase.from('members').select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)'),
+      const [
+        { data: membersData },
+        { data: orgsData },
+        { data: scData },
+        { data: wrData },
+        { data: grpData },
+      ] = await Promise.all([
+        supabase.from('members').select(`
+          *,
+          organization:organizations(*),
+          group:groups(*),
+          woreda:woredas(*),
+          subcity:subcities(*),
+          workLocation:work_locations(*),
+          lastLocation:gps_locations(*),
+          todayAttendance:attendances(*)
+        `),
         supabase.from('organizations').select('*'),
+        supabase.from('subcities').select('*').order('name'),
+        supabase.from('woredas').select('*').order('name'),
+        supabase.from('groups').select('*').order('name'),
       ]);
       if (membersData) setMembers(membersData as Member[]);
       if (orgsData) setOrganizations(orgsData as Organization[]);
+      if (scData) setSubcities(scData as Subcity[]);
+      if (wrData) setAllWoredas(wrData as Woreda[]);
+      if (grpData) setAllGroups(grpData as Group[]);
       setLoading(false);
     }
     load();
   }, []);
+
+  // Derived filter lists
+  const filteredWoredas = allWoredas.filter(w => !filters.subcityId || w.subcityId === filters.subcityId);
+  const filteredGroups = allGroups.filter(g =>
+    (!filters.organizationId || g.organizationId === filters.organizationId) &&
+    (!filters.woredaId || g.woredaId === filters.woredaId)
+  );
 
   const filtered = members.filter(m => {
     if (filters.search) {
       const q = filters.search.toLowerCase();
       if (!m.fullName.toLowerCase().includes(q) && !m.memberId.toLowerCase().includes(q) && !m.phone.includes(q)) return false;
     }
+    if (filters.subcityId && m.subcityId !== filters.subcityId) return false;
+    if (filters.woredaId && m.woredaId !== filters.woredaId) return false;
     if (filters.organizationId && m.organizationId !== filters.organizationId) return false;
+    if (filters.groupId && m.groupId !== filters.groupId) return false;
     if (filters.status && m.status !== filters.status) return false;
     if (filters.locationStatus && m.locationStatus !== filters.locationStatus) return false;
     if (filters.attendanceStatus && m.todayAttendance?.status !== filters.attendanceStatus) return false;
@@ -62,36 +118,24 @@ export default function Members() {
       gender: data.gender,
       phone: data.phone,
       profile_photo: data.profilePhoto,
+      subcity_id: data.subcityId,
+      woreda_id: data.woredaId,
       organization_id: data.organizationId,
+      group_id: data.groupId || null,
       job_role: data.jobRole,
       work_address: data.workAddress,
-      work_location_id: data.workLocationId,
+      work_location_id: data.workLocationId || null,
       registration_date: data.registrationDate,
       status: data.status,
       emergency_contact: data.emergencyContact,
       notes: data.notes,
-    }]).select('*, organization:organizations(*)').single();
+    }]).select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*)').single();
 
-    if (error) {
-      toast.error('Failed to add member');
-      return;
-    }
+    if (error) { toast.error('Failed to add member'); return; }
     setMembers(p => [inserted as Member, ...p]);
     setAddOpen(false);
     toast.success(`${data.fullName} added successfully!`);
   };
-
-  const SelectFilter = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
-    <div>
-      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-      <select
-        value={value} onChange={e => onChange(e.target.value)}
-        className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-      >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
 
   if (loading) {
     return (
@@ -115,7 +159,7 @@ export default function Members() {
         <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>{t('members.addMember')}</Button>
       </div>
 
-      {/* Search + filter bar */}
+      {/* Search + toolbar */}
       <div className="flex gap-3 flex-wrap">
         <SearchBar value={filters.search} onChange={v => setFilters(p => ({ ...p, search: v }))} placeholder={t('common.search') + '...'} className="flex-1 min-w-48" />
         <Button variant="outline" size="sm" icon={<SlidersHorizontal size={14} />} onClick={() => setShowFilters(p => !p)}>
@@ -133,17 +177,45 @@ export default function Members() {
 
       {/* Filters panel */}
       {showFilters && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          <SelectFilter label={t('members.organization')} value={filters.organizationId} onChange={v => setFilters(p => ({ ...p, organizationId: v }))}
-            options={[{ value: '', label: t('common.all') }, ...organizations.map(o => ({ value: o.id, label: o.name }))]} />
-          <SelectFilter label={t('members.status')} value={filters.status} onChange={v => setFilters(p => ({ ...p, status: v }))}
-            options={[{ value: '', label: t('common.all') }, { value: 'ACTIVE', label: t('status.active') }, { value: 'INACTIVE', label: t('status.inactive') }, { value: 'SUSPENDED', label: t('status.suspended') }]} />
-          <SelectFilter label="Location Status" value={filters.locationStatus} onChange={v => setFilters(p => ({ ...p, locationStatus: v }))}
-            options={[{ value: '', label: t('common.all') }, { value: 'AT_WORK', label: t('status.atWork') }, { value: 'NEARBY', label: t('status.nearby') }, { value: 'OUTSIDE', label: t('status.outside') }, { value: 'OFFLINE', label: t('status.offline') }]} />
-          <SelectFilter label={t('attendance.title')} value={filters.attendanceStatus} onChange={v => setFilters(p => ({ ...p, attendanceStatus: v }))}
-            options={[{ value: '', label: t('common.all') }, { value: 'PRESENT', label: t('status.present') }, { value: 'ABSENT', label: t('status.absent') }, { value: 'LATE', label: t('status.late') }]} />
-          <SelectFilter label="GPS Sharing" value={filters.isSharing} onChange={v => setFilters(p => ({ ...p, isSharing: v }))}
-            options={[{ value: '', label: t('common.all') }, { value: 'yes', label: 'Sharing' }, { value: 'no', label: 'Not Sharing' }]} />
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+          {/* Hierarchy row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <SelectFilter
+              label="ክፍለ ከተማ (Subcity)"
+              value={filters.subcityId}
+              onChange={v => setFilters(p => ({ ...p, subcityId: v, woredaId: '', groupId: '' }))}
+              options={[{ value: '', label: t('common.all') }, ...subcities.map(s => ({ value: s.id, label: s.name }))]}
+            />
+            <SelectFilter
+              label="ወረዳ (Woreda)"
+              value={filters.woredaId}
+              onChange={v => setFilters(p => ({ ...p, woredaId: v, groupId: '' }))}
+              options={[{ value: '', label: t('common.all') }, ...filteredWoredas.map(w => ({ value: w.id, label: w.name }))]}
+            />
+            <SelectFilter
+              label={t('members.organization')}
+              value={filters.organizationId}
+              onChange={v => setFilters(p => ({ ...p, organizationId: v, groupId: '' }))}
+              options={[{ value: '', label: t('common.all') }, ...organizations.map(o => ({ value: o.id, label: o.name }))]}
+            />
+            <SelectFilter
+              label="ቡድን (Group)"
+              value={filters.groupId}
+              onChange={v => setFilters(p => ({ ...p, groupId: v }))}
+              options={[{ value: '', label: t('common.all') }, ...filteredGroups.map(g => ({ value: g.id, label: g.name }))]}
+            />
+          </div>
+          {/* Status row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <SelectFilter label={t('members.status')} value={filters.status} onChange={v => setFilters(p => ({ ...p, status: v }))}
+              options={[{ value: '', label: t('common.all') }, { value: 'ACTIVE', label: t('status.active') }, { value: 'INACTIVE', label: t('status.inactive') }, { value: 'SUSPENDED', label: t('status.suspended') }]} />
+            <SelectFilter label="Location" value={filters.locationStatus} onChange={v => setFilters(p => ({ ...p, locationStatus: v }))}
+              options={[{ value: '', label: t('common.all') }, { value: 'AT_WORK', label: t('status.atWork') }, { value: 'NEARBY', label: t('status.nearby') }, { value: 'OUTSIDE', label: t('status.outside') }, { value: 'OFFLINE', label: t('status.offline') }]} />
+            <SelectFilter label={t('attendance.title')} value={filters.attendanceStatus} onChange={v => setFilters(p => ({ ...p, attendanceStatus: v }))}
+              options={[{ value: '', label: t('common.all') }, { value: 'PRESENT', label: t('status.present') }, { value: 'ABSENT', label: t('status.absent') }, { value: 'LATE', label: t('status.late') }]} />
+            <SelectFilter label="GPS" value={filters.isSharing} onChange={v => setFilters(p => ({ ...p, isSharing: v }))}
+              options={[{ value: '', label: t('common.all') }, { value: 'yes', label: 'Sharing' }, { value: 'no', label: 'Not Sharing' }]} />
+          </div>
         </div>
       )}
 
@@ -162,7 +234,7 @@ export default function Members() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
-                {['Member', 'ID', 'Organization', 'Phone', 'Status', 'Attendance', 'GPS'].map(h => (
+                {['Member', 'ID', 'Subcity / Woreda', 'Organization / Group', 'Phone', 'Status', 'GPS'].map(h => (
                   <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -181,21 +253,18 @@ export default function Members() {
                   </td>
                   <td className="py-3 px-4 text-gray-500 dark:text-gray-400 font-mono text-xs">{m.memberId}</td>
                   <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: m.organization?.color + '20', color: m.organization?.color }}>
+                    <p className="text-xs text-gray-700 dark:text-gray-300">{m.subcity?.name}</p>
+                    <p className="text-xs text-gray-400">{m.woreda?.name}</p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full block w-fit" style={{ backgroundColor: m.organization?.color + '20', color: m.organization?.color }}>
                       {m.organization?.name}
                     </span>
+                    {m.group && <p className="text-xs text-gray-400 mt-0.5">{m.group.name}</p>}
                   </td>
                   <td className="py-3 px-4 text-gray-500 dark:text-gray-400">{m.phone}</td>
                   <td className="py-3 px-4">
                     <Badge label={m.status} variant={m.status === 'ACTIVE' ? 'success' : m.status === 'INACTIVE' ? 'default' : 'danger'} />
-                  </td>
-                  <td className="py-3 px-4">
-                    {m.todayAttendance && (
-                      <Badge
-                        label={m.todayAttendance.status}
-                        variant={m.todayAttendance.status === 'PRESENT' ? 'success' : m.todayAttendance.status === 'ABSENT' ? 'danger' : m.todayAttendance.status === 'LATE' ? 'warning' : 'info'}
-                      />
-                    )}
                   </td>
                   <td className="py-3 px-4">
                     {m.isSharing
