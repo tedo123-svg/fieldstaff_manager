@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Plus, Edit, Trash2, Clock, Radio } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import { MapPin, Plus, Edit, Trash2, Clock, Radio, MousePointerClick } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { WorkLocation, Organization } from '../types';
@@ -23,7 +23,7 @@ L.Icon.Default.mergeOptions({
 
 const CENTER: [number, number] = [9.0192, 38.7525];
 
-// ── Defined OUTSIDE WorkLocations so React never remounts it on re-render ──
+// ── Types ────────────────────────────────────────────────────────────────────
 interface LocationFormValues {
   name: string;
   address: string;
@@ -36,17 +36,87 @@ interface LocationFormValues {
   status: 'ACTIVE' | 'INACTIVE';
 }
 
+const EMPTY_FORM: LocationFormValues = {
+  name: '', address: '', latitude: '', longitude: '',
+  organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00',
+  geofenceRadius: '200', status: 'ACTIVE',
+};
+
+// ── Map click handler — captures click position ──────────────────────────────
+function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) { onPick(e.latlng.lat, e.latlng.lng); },
+  });
+  return null;
+}
+
+// ── Mini map picker inside the form ─────────────────────────────────────────
+function MapPicker({
+  lat, lng, onPick,
+}: {
+  lat: number | null;
+  lng: number | null;
+  onPick: (lat: number, lng: number) => void;
+}) {
+  const pickedIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:24px;height:24px;background:#22C55E;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4)"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 24],
+  });
+
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+        <MousePointerClick size={12} />
+        Click on the map to set coordinates, or type them above
+      </p>
+      <div className="h-52 rounded-xl overflow-hidden border border-gray-300 dark:border-gray-600">
+        <MapContainer
+          center={lat !== null && lng !== null ? [lat, lng] : CENTER}
+          zoom={13}
+          className="w-full h-full"
+          zoomControl={false}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <MapClickHandler onPick={onPick} />
+          {lat !== null && lng !== null && (
+            <Marker position={[lat, lng]} icon={pickedIcon} />
+          )}
+        </MapContainer>
+      </div>
+      {lat !== null && lng !== null && (
+        <p className="text-xs text-green-600 font-mono">
+          📍 {lat.toFixed(6)}, {lng.toFixed(6)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Location form — outside component to prevent remount ────────────────────
 function LocationForm({
-  form,
-  setForm,
-  organizations,
-  t,
+  form, setForm, organizations, t,
 }: {
   form: LocationFormValues;
   setForm: React.Dispatch<React.SetStateAction<LocationFormValues>>;
   organizations: Organization[];
   t: (key: string) => string;
 }) {
+  const pickedLat = form.latitude ? parseFloat(form.latitude) : null;
+  const pickedLng = form.longitude ? parseFloat(form.longitude) : null;
+
+  const handleMapPick = useCallback((lat: number, lng: number) => {
+    setForm(p => ({
+      ...p,
+      latitude: lat.toFixed(6),
+      longitude: lng.toFixed(6),
+    }));
+  }, [setForm]);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -64,6 +134,8 @@ function LocationForm({
             onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
           />
         </div>
+
+        {/* Coordinates — typed or picked from map */}
         <Input
           label={t('workLocations.latitude') + ' *'}
           type="number" step="0.000001"
@@ -78,6 +150,12 @@ function LocationForm({
           onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
           placeholder="38.7525"
         />
+      </div>
+
+      {/* Map picker */}
+      <MapPicker lat={pickedLat} lng={pickedLng} onPick={handleMapPick} />
+
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('workLocations.assignedOrg')} *
@@ -126,13 +204,7 @@ function LocationForm({
     </div>
   );
 }
-// ───────────────────────────────────────────────────────────────────────────
-
-const EMPTY_FORM: LocationFormValues = {
-  name: '', address: '', latitude: '', longitude: '',
-  organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00',
-  geofenceRadius: '200', status: 'ACTIVE',
-};
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function WorkLocations() {
   const { t } = useTranslation();
@@ -276,6 +348,9 @@ export default function WorkLocations() {
                   <div className="flex items-center gap-2 text-xs text-gray-500">
                     <Radio size={12} /><span>Geofence: {loc.geofenceRadius}m</span>
                   </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
+                    <MapPin size={12} /><span>{loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}</span>
+                  </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: org?.color }} />
                     <span style={{ color: org?.color }} className="font-medium">{org?.name}</span>
@@ -331,13 +406,13 @@ export default function WorkLocations() {
       )}
 
       {/* Add Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('workLocations.addLocation')} size="md"
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('workLocations.addLocation')} size="lg"
         footer={<><Button variant="outline" onClick={() => setAddOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleAdd}>{t('common.save')}</Button></>}>
         <LocationForm form={form} setForm={setForm} organizations={organizations} t={t} />
       </Modal>
 
       {/* Edit Modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Work Location" size="md"
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Work Location" size="lg"
         footer={<><Button variant="outline" onClick={() => setEditOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleEdit}>{t('common.save')}</Button></>}>
         <LocationForm form={form} setForm={setForm} organizations={organizations} t={t} />
       </Modal>
