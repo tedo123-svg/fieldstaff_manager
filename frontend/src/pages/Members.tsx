@@ -175,12 +175,21 @@ export default function Members() {
           icon={<LinkIcon size={14} />}
           onClick={() => {
             const url = `${window.location.origin}/track.html`;
-            navigator.clipboard.writeText(url).then(() =>
-              toast.success('Tracking link copied! Share with members.')
-            );
+            try {
+              navigator.clipboard.writeText(url);
+            } catch {
+              // fallback for non-HTTPS
+              const el = document.createElement('textarea');
+              el.value = url;
+              document.body.appendChild(el);
+              el.select();
+              document.execCommand('copy');
+              document.body.removeChild(el);
+            }
+            toast.success('Tracking link copied: ' + url);
           }}
         >
-          Copy Tracking Link
+          📡 Tracking Link
         </Button>
         <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>
           {t('members.addMember')}
