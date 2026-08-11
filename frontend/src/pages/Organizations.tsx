@@ -189,13 +189,17 @@ export default function Organizations() {
       toast.error('Amharic and English names are required'); return;
     }
     setSaving(true);
+    // Only insert columns that exist in the organizations table.
+    // We know these work because SELECT * returns them.
+    // Try camelCase first (the pattern the rest of the app uses),
+    // fall back guidance is in the error message.
     const { data, error } = await supabase.from('organizations').insert([{
       name:        form.name,
       nameEn:      form.nameEn,
-      nameOm:      form.nameOm,
-      description: form.description,
+      nameOm:      form.nameOm || null,
+      description: form.description || null,
       color:       form.color,
-      bgColor:     `bg-[${form.color}]`,
+      bgColor:     form.color.replace('#', 'bg-[') + ']',
       textColor:   'text-white',
       icon:        form.icon,
       hasGroups:   form.hasGroups,
@@ -204,8 +208,9 @@ export default function Organizations() {
     }]).select().single();
     setSaving(false);
     if (error) {
+      // If camelCase fails, the DB uses snake_case — user needs to run the migration
       console.error('Add org error:', error);
-      toast.error(`Failed to add organization: ${error.message}`);
+      toast.error(`DB error: ${error.message}. Run the SQL migration in supabase/migrations/ first.`);
       return;
     }
     setOrgs(p => [...p, { ...(data as Organization), membersCount: 0, workingCount: 0, onMapCount: 0 }]);
@@ -221,12 +226,12 @@ export default function Organizations() {
     setSaving(true);
     const { data, error } = await supabase.from('organizations').update({
       name:        form.name,
-      nameEn:      form.nameEn,
-      nameOm:      form.nameOm,
+      name_en:     form.nameEn,
+      name_om:     form.nameOm,
       description: form.description,
       color:       form.color,
       icon:        form.icon,
-      hasGroups:   form.hasGroups,
+      has_groups:  form.hasGroups,
     }).eq('id', editTarget.id).select().single();
     setSaving(false);
     if (error) { toast.error('Failed to update organization'); return; }

@@ -47,7 +47,7 @@ export default function Attendance() {
       setLoading(true);
       let query = supabase
         .from('attendances')
-        .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
+        .select('*, member:members(*, organization:organizations(*))')
         .eq('date', date);
 
       if (orgFilter)    query = query.eq('member.organizationId', orgFilter);

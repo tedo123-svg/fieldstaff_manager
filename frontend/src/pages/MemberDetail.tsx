@@ -57,9 +57,6 @@ export default function MemberDetail() {
       .select(`
         *,
         organization:organizations(*),
-        group:groups(*),
-        woreda:woredas(*),
-        subcity:subcities(*),
         workLocation:work_locations(*),
         lastLocation:gps_locations(*),
         todayAttendance:attendances(*)

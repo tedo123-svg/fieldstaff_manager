@@ -24,28 +24,27 @@ export default function OrganizationDetail() {
     async function load() {
       if (!id) return;
       setLoading(true);
-      const [{ data: orgData }, { data: membersData }, { data: locsData }, { data: grpsData }] = await Promise.all([
+      const [{ data: orgData }, { data: membersData }, { data: locsData }] = await Promise.all([
         supabase.from('organizations').select('*').eq('id', id).single(),
         supabase.from('members').select(`
           *,
           organization:organizations(*),
-          group:groups(*),
-          woreda:woredas(*),
-          subcity:subcities(*),
           workLocation:work_locations(*),
           lastLocation:gps_locations(*),
           todayAttendance:attendances(*)
         `).eq('organizationId', id),
         supabase.from('work_locations').select('*').eq('organizationId', id),
-        supabase.from('groups').select('*').eq('organizationId', id).order('name'),
       ]);
       if (orgData) setOrg(orgData as Organization);
       if (membersData) setMembers(membersData as Member[]);
       if (locsData) setLocations(locsData as WorkLocation[]);
+
+      // groups table only exists after migration — try gracefully
+      const { data: grpsData } = await supabase
+        .from('groups').select('*').eq('organizationId', id).order('name');
       if (grpsData) {
         const grps = grpsData as Group[];
         setGroups(grps);
-        // expand all groups by default
         setExpandedGroups(new Set(grps.map(g => g.id)));
       }
       setLoading(false);

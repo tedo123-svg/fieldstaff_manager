@@ -64,28 +64,25 @@ export default function Members() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [
-        { data: membersData },
-        { data: orgsData },
-        { data: scData },
-        { data: wrData },
-        { data: grpData },
-      ] = await Promise.all([
-        supabase.from('members').select(`
-          *,
-          organization:organizations(*),
-          group:groups(*),
-          woreda:woredas(*),
-          subcity:subcities(*),
-          workLocation:work_locations(*),
-          lastLocation:gps_locations(*),
-          todayAttendance:attendances(*)
-        `),
-        supabase.from('organizations').select('*'),
+
+      // Base member query — only join tables that exist in the current schema
+      const { data: membersData } = await supabase.from('members').select(`
+        *,
+        organization:organizations(*),
+        workLocation:work_locations(*),
+        lastLocation:gps_locations(*),
+        todayAttendance:attendances(*)
+      `);
+
+      const { data: orgsData } = await supabase.from('organizations').select('*');
+
+      // These tables only exist after running 001_hierarchy_schema.sql migration
+      const [{ data: scData }, { data: wrData }, { data: grpData }] = await Promise.allSettled([
         supabase.from('subcities').select('*').order('name'),
         supabase.from('woredas').select('*').order('name'),
         supabase.from('groups').select('*').order('name'),
-      ]);
+      ]).then(results => results.map(r => r.status === 'fulfilled' ? r.value : { data: null }));
+
       if (membersData) setMembers(membersData as Member[]);
       if (orgsData)    setOrganizations(orgsData as Organization[]);
       if (scData)      setSubcities(scData as Subcity[]);
@@ -147,7 +144,7 @@ export default function Members() {
         emergencyContact: data.emergencyContact,
         notes:           data.notes,
       }])
-      .select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*)')
+      .select('*, organization:organizations(*)')
       .single();
 
     if (error) { toast.error('Failed to add member'); return; }
