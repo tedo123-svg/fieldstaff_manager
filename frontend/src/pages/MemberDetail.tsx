@@ -100,14 +100,14 @@ export default function MemberDetail() {
     const { data: updated, error } = await supabase
       .from('members')
       .update({
-        full_name: data.fullName,
-        gender: data.gender,
-        phone: data.phone,
-        job_role: data.jobRole,
-        work_address: data.workAddress,
-        emergency_contact: data.emergencyContact,
-        notes: data.notes,
-        status: data.status,
+        fullName:         data.fullName,
+        gender:           data.gender,
+        phone:            data.phone,
+        jobRole:          data.jobRole,
+        workAddress:      data.workAddress,
+        emergencyContact: data.emergencyContact,
+        notes:            data.notes,
+        status:           data.status,
       })
       .eq('id', member.id)
       .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')

@@ -31,7 +31,7 @@ export default function Dashboard() {
         const { data: membersData } = await supabase
           .from('members')
           .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')
-          .eq('is_sharing', true)
+          .eq('isSharing', true)
           .limit(4);
 
         if (membersData) setActiveMembers(membersData as Member[]);

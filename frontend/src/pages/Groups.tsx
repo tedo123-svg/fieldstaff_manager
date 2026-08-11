@@ -111,7 +111,7 @@ export default function Groups() {
     setLoading(true);
     const [{ data: grps }, { data: orgData }, { data: sc }, { data: wr }] = await Promise.all([
       supabase.from('groups').select('*, memberCount:members(count)').order('name'),
-      supabase.from('organizations').select('*').eq('has_groups', true).order('name'),
+      supabase.from('organizations').select('*').eq('hasGroups', true).order('name'),
       supabase.from('subcities').select('*').order('name'),
       supabase.from('woredas').select('*').order('name'),
     ]);
@@ -137,7 +137,7 @@ export default function Groups() {
     setSaving(true);
     const { data, error } = await supabase
       .from('groups')
-      .insert([{ name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId }])
+      .insert([{ name: form.name, organizationId: form.organizationId, woredaId: form.woredaId }])
       .select('*')
       .single();
     setSaving(false);
@@ -155,7 +155,7 @@ export default function Groups() {
     setSaving(true);
     const { data, error } = await supabase
       .from('groups')
-      .update({ name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId })
+      .update({ name: form.name, organizationId: form.organizationId, woredaId: form.woredaId })
       .eq('id', editTarget.id)
       .select('*')
       .single();

@@ -35,9 +35,9 @@ export default function OrganizationDetail() {
           workLocation:work_locations(*),
           lastLocation:gps_locations(*),
           todayAttendance:attendances(*)
-        `).eq('organization_id', id),
-        supabase.from('work_locations').select('*').eq('organization_id', id),
-        supabase.from('groups').select('*').eq('organization_id', id).order('name'),
+        `).eq('organizationId', id),
+        supabase.from('work_locations').select('*').eq('organizationId', id),
+        supabase.from('groups').select('*').eq('organizationId', id).order('name'),
       ]);
       if (orgData) setOrg(orgData as Organization);
       if (membersData) setMembers(membersData as Member[]);

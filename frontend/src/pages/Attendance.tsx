@@ -50,9 +50,9 @@ export default function Attendance() {
         .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
         .eq('date', date);
 
-      if (orgFilter)    query = query.eq('member.organization_id', orgFilter);
-      if (woredaFilter) query = query.eq('member.woreda_id', woredaFilter);
-      if (groupFilter)  query = query.eq('member.group_id', groupFilter);
+      if (orgFilter)    query = query.eq('member.organizationId', orgFilter);
+      if (woredaFilter) query = query.eq('member.woredaId', woredaFilter);
+      if (groupFilter)  query = query.eq('member.groupId', groupFilter);
       if (statusFilter) query = query.eq('status', statusFilter);
 
       const { data } = await query;

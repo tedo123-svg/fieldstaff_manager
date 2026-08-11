@@ -168,7 +168,7 @@ export default function Organizations() {
     setLoading(true);
     const { data } = await supabase
       .from('organizations')
-      .select('*, members(id, status, is_sharing, todayAttendance:attendances(status))');
+      .select('*, members(id, status, isSharing, todayAttendance:attendances(status))');
     if (data) {
       setOrgs((data as unknown[]).map((org: unknown) => {
         const o = org as Organization & { members: { status: string; is_sharing: boolean; todayAttendance?: { status: string } }[] };
@@ -177,7 +177,7 @@ export default function Organizations() {
           ...o,
           membersCount: members.length,
           workingCount: members.filter(m => m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE').length,
-          onMapCount: members.filter(m => m.is_sharing).length,
+          onMapCount: members.filter(m => m.isSharing).length,
         };
       }));
     }
@@ -189,16 +189,25 @@ export default function Organizations() {
       toast.error('Amharic and English names are required'); return;
     }
     setSaving(true);
-    const bgColor = `bg-[${form.color}]`;
     const { data, error } = await supabase.from('organizations').insert([{
-      name: form.name, name_en: form.nameEn, name_om: form.nameOm,
-      description: form.description, color: form.color,
-      bg_color: bgColor, text_color: 'text-white',
-      icon: form.icon, has_groups: form.hasGroups,
-      member_count: 0, active_count: 0,
+      name:        form.name,
+      nameEn:      form.nameEn,
+      nameOm:      form.nameOm,
+      description: form.description,
+      color:       form.color,
+      bgColor:     `bg-[${form.color}]`,
+      textColor:   'text-white',
+      icon:        form.icon,
+      hasGroups:   form.hasGroups,
+      memberCount: 0,
+      activeCount: 0,
     }]).select().single();
     setSaving(false);
-    if (error) { toast.error('Failed to add organization'); return; }
+    if (error) {
+      console.error('Add org error:', error);
+      toast.error(`Failed to add organization: ${error.message}`);
+      return;
+    }
     setOrgs(p => [...p, { ...(data as Organization), membersCount: 0, workingCount: 0, onMapCount: 0 }]);
     setAddOpen(false);
     setForm(EMPTY_ORG);
@@ -211,9 +220,13 @@ export default function Organizations() {
     }
     setSaving(true);
     const { data, error } = await supabase.from('organizations').update({
-      name: form.name, name_en: form.nameEn, name_om: form.nameOm,
-      description: form.description, color: form.color,
-      icon: form.icon, has_groups: form.hasGroups,
+      name:        form.name,
+      nameEn:      form.nameEn,
+      nameOm:      form.nameOm,
+      description: form.description,
+      color:       form.color,
+      icon:        form.icon,
+      hasGroups:   form.hasGroups,
     }).eq('id', editTarget.id).select().single();
     setSaving(false);
     if (error) { toast.error('Failed to update organization'); return; }

@@ -241,9 +241,9 @@ export default function WorkLocations() {
     const { data, error } = await supabase.from('work_locations').insert([{
       name: form.name, address: form.address,
       latitude: parseFloat(form.latitude), longitude: parseFloat(form.longitude),
-      organization_id: form.organizationId,
-      working_hours_start: form.workingHoursStart, working_hours_end: form.workingHoursEnd,
-      geofence_radius: parseInt(form.geofenceRadius), status: form.status,
+      organizationId: form.organizationId,
+      workingHoursStart: form.workingHoursStart, workingHoursEnd: form.workingHoursEnd,
+      geofenceRadius: parseInt(form.geofenceRadius), status: form.status,
     }]).select().single();
     if (error) { toast.error('Failed to add location'); return; }
     setLocations(p => [...p, data as WorkLocation]);
@@ -258,10 +258,10 @@ export default function WorkLocations() {
       address: form.address || selected.address,
       latitude: form.latitude ? parseFloat(form.latitude) : selected.latitude,
       longitude: form.longitude ? parseFloat(form.longitude) : selected.longitude,
-      organization_id: form.organizationId || selected.organizationId,
-      working_hours_start: form.workingHoursStart,
-      working_hours_end: form.workingHoursEnd,
-      geofence_radius: parseInt(form.geofenceRadius),
+      organizationId: form.organizationId || selected.organizationId,
+      workingHoursStart: form.workingHoursStart,
+      workingHoursEnd: form.workingHoursEnd,
+      geofenceRadius: parseInt(form.geofenceRadius),
       status: form.status,
     }).eq('id', selected.id).select().single();
     if (error) { toast.error('Failed to update location'); return; }

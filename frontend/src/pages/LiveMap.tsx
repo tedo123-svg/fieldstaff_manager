@@ -68,7 +68,7 @@ export default function LiveMap() {
   useEffect(() => {
     async function load() {
       const [{ data: membersData }, { data: orgsData }, { data: locsData }] = await Promise.all([
-        supabase.from('members').select('*, organization:organizations(*), lastLocation:gps_locations(*)').eq('is_sharing', true),
+        supabase.from('members').select('*, organization:organizations(*), lastLocation:gps_locations(*)').eq('isSharing', true),
         supabase.from('organizations').select('*'),
         supabase.from('work_locations').select('*'),
       ]);
