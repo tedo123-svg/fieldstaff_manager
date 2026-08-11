@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Edit, Trash2, Users, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, ChevronDown, ChevronRight, MapPin } from 'lucide-react';
 import type { Group, Organization, Subcity, Woreda } from '../types';
 import Card from '../components/common/Card';
 import Badge from '../components/common/Badge';
@@ -11,8 +11,27 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
 import { mapOrg, mapWoreda, mapGroup } from '../lib/mappers';
+import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-// Only orgs 1,2,3 support groups — enforced by hasGroups flag on org
+// Fix default Leaflet marker icons broken by bundlers
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// ── Click handler inside map ──────────────────────────────────────────────
+function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) { onPick(e.latlng.lat, e.latlng.lng); },
+  });
+  return null;
+}
+
+// ── Reusable select ───────────────────────────────────────────────────────
 function SelectEl({ label, value, onChange, disabled, children }: {
   label: string; value: string; onChange: (v: string) => void;
   disabled?: boolean; children: React.ReactNode;
@@ -30,14 +49,23 @@ function SelectEl({ label, value, onChange, disabled, children }: {
   );
 }
 
-// ── GroupForm defined OUTSIDE to prevent remount on re-render ──────────────
-interface GroupFormValues {
+// ── Form types ────────────────────────────────────────────────────────────
+export interface GroupFormValues {
   name: string;
   organizationId: string;
   subcityId: string;
   woredaId: string;
+  // work location
+  locationName: string;
+  latitude: number | null;
+  longitude: number | null;
+  geofenceRadius: number;
 }
 
+// Addis Ababa center
+const DEFAULT_CENTER: [number, number] = [9.0054, 38.7636];
+
+// ── GroupForm ─────────────────────────────────────────────────────────────
 function GroupForm({
   form, setForm, orgs, subcities, woredas,
 }: {
@@ -47,66 +75,166 @@ function GroupForm({
   subcities: Subcity[];
   woredas: Woreda[];
 }) {
+  const mapRef = useRef<L.Map | null>(null);
+
+  const handlePick = (lat: number, lng: number) => {
+    setForm(p => ({ ...p, latitude: lat, longitude: lng }));
+  };
+
+  const markerPos: [number, number] | null =
+    form.latitude !== null && form.longitude !== null
+      ? [form.latitude, form.longitude]
+      : null;
+
   return (
     <div className="space-y-4">
+      {/* Basic info */}
       <Input
         label="Group Name *"
         value={form.name}
         onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
         placeholder="e.g. ቡድን ፩"
       />
-      <SelectEl label="Organization *" value={form.organizationId} onChange={v => setForm(p => ({ ...p, organizationId: v }))}>
+      <SelectEl
+        label="Organization *"
+        value={form.organizationId}
+        onChange={v => setForm(p => ({ ...p, organizationId: v }))}
+      >
         <option value="">-- Select Organization --</option>
         {orgs.map(o => <option key={o.id} value={o.id}>{o.name} ({o.nameEn})</option>)}
       </SelectEl>
-      <SelectEl label="ክፍለ ከተማ (Subcity)" value={form.subcityId} onChange={v => setForm(p => ({ ...p, subcityId: v, woredaId: '' }))}>
+      <SelectEl
+        label="ክፍለ ከተማ (Subcity)"
+        value={form.subcityId}
+        onChange={v => setForm(p => ({ ...p, subcityId: v, woredaId: '' }))}
+      >
         <option value="">-- Select Subcity --</option>
         {subcities.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </SelectEl>
-      <SelectEl label="ወረዳ (Woreda) *" value={form.woredaId} onChange={v => setForm(p => ({ ...p, woredaId: v }))} disabled={!form.subcityId}>
+      <SelectEl
+        label="ወረዳ (Woreda) *"
+        value={form.woredaId}
+        onChange={v => setForm(p => ({ ...p, woredaId: v }))}
+        disabled={!form.subcityId}
+      >
         <option value="">-- Select Woreda --</option>
         {woredas.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
       </SelectEl>
+
+      {/* Work location section */}
+      <div className="border border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+            <MapPin size={12} /> Work Location (click map to set pin)
+          </p>
+        </div>
+
+        {/* Map */}
+        <div className="h-56 w-full">
+          <MapContainer
+            center={markerPos ?? DEFAULT_CENTER}
+            zoom={13}
+            style={{ height: '100%', width: '100%' }}
+            ref={mapRef}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            />
+            <MapClickHandler onPick={handlePick} />
+            {markerPos && (
+              <>
+                <Marker position={markerPos} />
+                <Circle
+                  center={markerPos}
+                  radius={form.geofenceRadius}
+                  pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15 }}
+                />
+              </>
+            )}
+          </MapContainer>
+        </div>
+
+        {/* Location fields below map */}
+        <div className="p-4 space-y-3 bg-white dark:bg-gray-800">
+          <Input
+            label="Location Name"
+            value={form.locationName}
+            onChange={e => setForm(p => ({ ...p, locationName: e.target.value }))}
+            placeholder="e.g. መስቀል አደባባይ"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Latitude</label>
+              <p className="text-sm font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-600">
+                {form.latitude !== null ? form.latitude.toFixed(6) : '—'}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Longitude</label>
+              <p className="text-sm font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-600">
+                {form.longitude !== null ? form.longitude.toFixed(6) : '—'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">
+              Geofence radius (m)
+            </label>
+            <input
+              type="range" min={50} max={1000} step={50}
+              value={form.geofenceRadius}
+              onChange={e => setForm(p => ({ ...p, geofenceRadius: Number(e.target.value) }))}
+              className="flex-1 accent-green-600"
+            />
+            <span className="text-sm font-semibold text-green-600 w-14 text-right">
+              {form.geofenceRadius} m
+            </span>
+          </div>
+          {form.latitude === null && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <MapPin size={11} /> Click the map above to set the work location pin
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-// ────────────────────────────────────────────────────────────────────────────
 
+// ── Main component ────────────────────────────────────────────────────────
 interface GroupWithCount extends Group {
   memberCount: number;
 }
 
-const EMPTY_FORM: GroupFormValues = { name: '', organizationId: '', subcityId: '', woredaId: '' };
+const EMPTY_FORM: GroupFormValues = {
+  name: '', organizationId: '', subcityId: '', woredaId: '',
+  locationName: '', latitude: null, longitude: null, geofenceRadius: 200,
+};
 
 export default function Groups() {
   const { t } = useTranslation();
 
-  const [groups, setGroups] = useState<GroupWithCount[]>([]);
-  const [orgs, setOrgs] = useState<Organization[]>([]);
-  const [subcities, setSubcities] = useState<Subcity[]>([]);
-  const [allWoredas, setAllWoredas] = useState<Woreda[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<GroupWithCount | null>(null);
+  const [groups, setGroups]           = useState<GroupWithCount[]>([]);
+  const [orgs, setOrgs]               = useState<Organization[]>([]);
+  const [subcities, setSubcities]     = useState<Subcity[]>([]);
+  const [allWoredas, setAllWoredas]   = useState<Woreda[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [addOpen, setAddOpen]         = useState(false);
+  const [editTarget, setEditTarget]   = useState<GroupWithCount | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GroupWithCount | null>(null);
-  const [form, setForm] = useState<GroupFormValues>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
+  const [form, setForm]               = useState<GroupFormValues>(EMPTY_FORM);
+  const [saving, setSaving]           = useState(false);
 
-  // Filter state
-  const [filterOrg, setFilterOrg] = useState('');
+  const [filterOrg, setFilterOrg]         = useState('');
   const [filterSubcity, setFilterSubcity] = useState('');
-  const [filterWoreda, setFilterWoreda] = useState('');
+  const [filterWoreda, setFilterWoreda]   = useState('');
+  const [expandedOrgs, setExpandedOrgs]   = useState<Set<string>>(new Set());
 
-  // Expand/collapse per org
-  const [expandedOrgs, setExpandedOrgs] = useState<Set<string>>(new Set());
-
-  const woredas = allWoredas.filter(w => !form.subcityId || w.subcityId === form.subcityId);
+  const woredas         = allWoredas.filter(w => !form.subcityId || w.subcityId === form.subcityId);
   const filteredWoredas = allWoredas.filter(w => !filterSubcity || w.subcityId === filterSubcity);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
@@ -132,20 +260,62 @@ export default function Groups() {
     setLoading(false);
   }
 
+  // Save work location then create group linked to it
+  async function saveGroupWithLocation(
+    groupPayload: { name: string; organization_id: string; woreda_id: string },
+    f: GroupFormValues,
+  ) {
+    // Only create work_location if a pin was set
+    let workLocationId: string | null = null;
+    if (f.latitude !== null && f.longitude !== null) {
+      const locName = f.locationName.trim() || `${groupPayload.name} — Work Location`;
+      const { data: locData, error: locError } = await supabase
+        .from('work_locations')
+        .insert([{
+          name:                locName,
+          address:             locName,
+          latitude:            f.latitude,
+          longitude:           f.longitude,
+          organization_id:     f.organizationId,
+          working_hours_start: '08:00',
+          working_hours_end:   '17:00',
+          geofence_radius:     f.geofenceRadius,
+          status:              'ACTIVE',
+        }])
+        .select('id')
+        .single();
+      if (locError) {
+        toast.error('Failed to save work location: ' + locError.message);
+        return null;
+      }
+      workLocationId = (locData as { id: string }).id;
+    }
+
+    const { data, error } = await supabase
+      .from('groups')
+      .insert([{ ...groupPayload, work_location_id: workLocationId }])
+      .select('*, woreda:woredas(*)')
+      .single();
+
+    if (error) {
+      toast.error('Failed to create group: ' + error.message);
+      return null;
+    }
+    return data as Record<string, unknown>;
+  }
+
   const handleAdd = async () => {
     if (!form.name.trim() || !form.organizationId || !form.woredaId) {
       toast.error('Name, organization and woreda are required'); return;
     }
     setSaving(true);
-    const { data, error } = await supabase
-      .from('groups')
-      .insert([{ name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId }])
-      .select('*, woreda:woredas(*)')
-      .single();
+    const result = await saveGroupWithLocation(
+      { name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId },
+      form,
+    );
     setSaving(false);
-    if (error) { toast.error('Failed to create group: ' + error.message); return; }
-    const g = data as Record<string, unknown>;
-    setGroups(p => [...p, { ...mapGroup(g), memberCount: 0 }]);
+    if (!result) return;
+    setGroups(p => [...p, { ...mapGroup(result), memberCount: 0 }]);
     setAddOpen(false);
     setForm(EMPTY_FORM);
     toast.success('Group created');
@@ -167,7 +337,7 @@ export default function Groups() {
     const g = data as Record<string, unknown>;
     setGroups(p => p.map(gr => gr.id === editTarget.id
       ? { ...mapGroup(g), memberCount: editTarget.memberCount }
-      : gr
+      : gr,
     ));
     setEditTarget(null);
     setForm(EMPTY_FORM);
@@ -193,16 +363,23 @@ export default function Groups() {
       organizationId: g.organizationId,
       subcityId: g.woreda?.subcityId ?? '',
       woredaId: g.woredaId,
+      locationName: '',
+      latitude: null,
+      longitude: null,
+      geofenceRadius: 200,
     });
   };
 
   const toggleOrg = (id: string) =>
-    setExpandedOrgs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setExpandedOrgs(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
-  // Apply filters
   const visibleGroups = groups.filter(g =>
     (!filterOrg || g.organizationId === filterOrg) &&
-    (!filterWoreda || g.woredaId === filterWoreda)
+    (!filterWoreda || g.woredaId === filterWoreda),
   );
 
   if (loading) {
@@ -259,7 +436,6 @@ export default function Groups() {
 
         return (
           <div key={org.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {/* Org header row */}
             <button
               onClick={() => toggleOrg(org.id)}
               className="w-full flex items-center gap-3 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left border-b border-gray-100 dark:border-gray-700"
@@ -289,37 +465,25 @@ export default function Groups() {
                         <div className="flex items-start justify-between">
                           <div>
                             <p className="font-semibold text-gray-900 dark:text-white text-sm">{g.name}</p>
-                            {g.woreda && (
-                              <p className="text-xs text-gray-400 mt-0.5">{g.woreda.name}</p>
-                            )}
+                            {g.woreda && <p className="text-xs text-gray-400 mt-0.5">{g.woreda.name}</p>}
                           </div>
                           <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => openEdit(g)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600"
-                            >
+                            <button onClick={() => openEdit(g)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600">
                               <Edit size={13} />
                             </button>
-                            <button
-                              onClick={() => setDeleteTarget(g)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500"
-                            >
+                            <button onClick={() => setDeleteTarget(g)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500">
                               <Trash2 size={13} />
                             </button>
                           </div>
                         </div>
-
                         <div className="flex items-center gap-2 mt-3">
                           <Users size={13} className="text-gray-400" />
-                          <span className={clsx(
-                            'text-xs font-medium',
-                            g.memberCount >= 2 ? 'text-green-600' : 'text-red-500'
-                          )}>
+                          <span className={clsx('text-xs font-medium', g.memberCount >= 2 ? 'text-green-600' : 'text-red-500')}>
                             {g.memberCount} member{g.memberCount !== 1 ? 's' : ''}
                           </span>
-                          {g.memberCount < 2 && (
-                            <Badge label="min 2 required" variant="danger" size="sm" />
-                          )}
+                          {g.memberCount < 2 && <Badge label="min 2 required" variant="danger" size="sm" />}
                         </div>
                       </Card>
                     ))}
@@ -338,14 +502,14 @@ export default function Groups() {
         </div>
       )}
 
-      {/* Add modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Group" size="sm"
+      {/* Add modal — larger to fit map */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Group" size="lg"
         footer={<><Button variant="outline" onClick={() => setAddOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleAdd} loading={saving}>{t('common.save')}</Button></>}>
         <GroupForm form={form} setForm={setForm} orgs={orgs} subcities={subcities} woredas={woredas} />
       </Modal>
 
       {/* Edit modal */}
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Group" size="sm"
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Group" size="lg"
         footer={<><Button variant="outline" onClick={() => setEditTarget(null)}>{t('common.cancel')}</Button><Button onClick={handleEdit} loading={saving}>{t('common.save')}</Button></>}>
         <GroupForm form={form} setForm={setForm} orgs={orgs} subcities={subcities} woredas={woredas} />
       </Modal>
