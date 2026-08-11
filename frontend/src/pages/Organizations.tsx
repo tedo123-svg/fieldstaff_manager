@@ -166,33 +166,50 @@ export default function Organizations() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
+
+    // Step 1: fetch organizations without nested joins (avoids FK resolution issues)
+    const { data: orgData, error: orgError } = await supabase
       .from('organizations')
-      .select('*, members(id, status, is_sharing, todayAttendance:attendances(status))');
-    if (data) {
-      setOrgs((data as unknown[]).map((org: unknown) => {
-        const o = org as Record<string, unknown> & {
-          members: { status: string; is_sharing: boolean; todayAttendance?: { status: string } }[];
-        };
-        const members = o.members ?? [];
+      .select('*');
+
+    if (orgError) {
+      console.error('Failed to load organizations:', orgError.message);
+      toast.error('Failed to load organizations: ' + orgError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Step 2: fetch member counts per org separately (safe — no nested attendance join)
+    const { data: membersData } = await supabase
+      .from('members')
+      .select('id, status, is_sharing, organization_id');
+
+    const members = (membersData ?? []) as {
+      id: string;
+      status: string;
+      is_sharing: boolean;
+      organization_id: string;
+    }[];
+
+    if (orgData) {
+      setOrgs((orgData as Record<string, unknown>[]).map(o => {
+        const orgMembers = members.filter(m => m.organization_id === o.id);
         return {
-          id:          o.id,
-          name:        o.name,
-          nameEn:      o.name_en ?? o.nameEn ?? '',
-          nameOm:      o.name_om ?? o.nameOm ?? '',
-          color:       o.color ?? '#3B82F6',
-          bgColor:     o.bg_color ?? o.bgColor ?? '',
-          textColor:   o.text_color ?? o.textColor ?? 'text-white',
-          icon:        o.icon ?? '🔵',
-          description: o.description,
-          hasGroups:   o.has_groups ?? o.hasGroups ?? false,
-          memberCount: members.length,
-          activeCount: members.filter(m => m.status === 'ACTIVE').length,
-          membersCount: members.length,
-          workingCount: members.filter(m =>
-            m.todayAttendance?.status === 'PRESENT' || m.todayAttendance?.status === 'LATE'
-          ).length,
-          onMapCount: members.filter(m => m.is_sharing).length,
+          id:           o.id,
+          name:         o.name,
+          nameEn:       (o.name_en ?? o.nameEn ?? '') as string,
+          nameOm:       (o.name_om ?? o.nameOm ?? '') as string,
+          color:        (o.color ?? '#3B82F6') as string,
+          bgColor:      (o.bg_color ?? o.bgColor ?? '') as string,
+          textColor:    (o.text_color ?? o.textColor ?? 'text-white') as string,
+          icon:         (o.icon ?? '🔵') as string,
+          description:  o.description,
+          hasGroups:    (o.has_groups ?? o.hasGroups ?? false) as boolean,
+          memberCount:  orgMembers.length,
+          activeCount:  orgMembers.filter(m => m.status === 'ACTIVE').length,
+          membersCount: orgMembers.length,
+          workingCount: 0, // requires attendance join — loaded on detail page
+          onMapCount:   orgMembers.filter(m => m.is_sharing).length,
         } as OrgWithStats;
       }));
     }
