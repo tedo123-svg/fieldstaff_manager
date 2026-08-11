@@ -149,6 +149,7 @@ interface OrgWithStats extends Organization {
   membersCount: number;
   workingCount: number;
   onMapCount: number;
+  groupCount: number;
 }
 
 export default function Organizations() {
@@ -167,11 +168,7 @@ export default function Organizations() {
   async function load() {
     setLoading(true);
 
-    // Step 1: fetch organizations without nested joins (avoids FK resolution issues)
-    const { data: orgData, error: orgError } = await supabase
-      .from('organizations')
-      .select('*');
-
+    const { data: orgData, error: orgError } = await supabase.from('organizations').select('*');
     if (orgError) {
       console.error('Failed to load organizations:', orgError.message);
       toast.error('Failed to load organizations: ' + orgError.message);
@@ -179,21 +176,21 @@ export default function Organizations() {
       return;
     }
 
-    // Step 2: fetch member counts per org separately (safe — no nested attendance join)
     const { data: membersData } = await supabase
       .from('members')
       .select('id, status, is_sharing, organization_id');
 
-    const members = (membersData ?? []) as {
-      id: string;
-      status: string;
-      is_sharing: boolean;
-      organization_id: string;
-    }[];
+    const { data: groupsData } = await supabase
+      .from('groups')
+      .select('id, organization_id');
+
+    const members = (membersData ?? []) as { id: string; status: string; is_sharing: boolean; organization_id: string }[];
+    const groups  = (groupsData  ?? []) as { id: string; organization_id: string }[];
 
     if (orgData) {
       setOrgs((orgData as Record<string, unknown>[]).map(o => {
         const orgMembers = members.filter(m => m.organization_id === o.id);
+        const orgGroups  = groups.filter(g => g.organization_id === o.id);
         return {
           id:           o.id,
           name:         o.name,
@@ -208,8 +205,9 @@ export default function Organizations() {
           memberCount:  orgMembers.length,
           activeCount:  orgMembers.filter(m => m.status === 'ACTIVE').length,
           membersCount: orgMembers.length,
-          workingCount: 0, // requires attendance join — loaded on detail page
+          workingCount: 0,
           onMapCount:   orgMembers.filter(m => m.is_sharing).length,
+          groupCount:   orgGroups.length,
         } as OrgWithStats;
       }));
     }
@@ -245,7 +243,7 @@ export default function Organizations() {
       toast.error(`DB error: ${error.message}. Run the SQL migration in supabase/migrations/ first.`);
       return;
     }
-    setOrgs(p => [...p, { ...(data as Organization), membersCount: 0, workingCount: 0, onMapCount: 0 }]);
+    setOrgs(p => [...p, { ...(data as Organization), membersCount: 0, workingCount: 0, onMapCount: 0, groupCount: 0 }]);
     setAddOpen(false);
     setForm(EMPTY_ORG);
     toast.success('Organization added');
@@ -268,7 +266,7 @@ export default function Organizations() {
     setSaving(false);
     if (error) { toast.error('Failed to update organization'); return; }
     setOrgs(p => p.map(o => o.id === editTarget.id
-      ? { ...(data as Organization), membersCount: editTarget.membersCount, workingCount: editTarget.workingCount, onMapCount: editTarget.onMapCount }
+      ? { ...(data as Organization), membersCount: editTarget.membersCount, workingCount: editTarget.workingCount, onMapCount: editTarget.onMapCount, groupCount: editTarget.groupCount }
       : o));
     setEditTarget(null);
     setForm(EMPTY_ORG);
@@ -377,6 +375,7 @@ export default function Organizations() {
                     { icon: UserCheck, label: t('orgs.activeMembers'), value: org.activeCount,  color: 'text-green-600',  bg: 'bg-green-50 dark:bg-green-900/20' },
                     { icon: Briefcase, label: t('orgs.working'),       value: org.workingCount, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20' },
                     { icon: Map,       label: t('orgs.onMap'),         value: org.onMapCount,   color: 'text-teal-600',   bg: 'bg-teal-50 dark:bg-teal-900/20' },
+                    ...(org.hasGroups ? [{ icon: Users, label: 'Groups', value: org.groupCount, color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-900/20' }] : []),
                   ].map(({ icon: Icon, label, value, color, bg }) => (
                     <div key={label} className={`rounded-xl p-3 ${bg}`}>
                       <div className="flex items-center gap-1.5 mb-1">

@@ -207,6 +207,13 @@ interface GroupWithCount extends Group {
   memberCount: number;
 }
 
+interface GroupMember {
+  id: string;
+  full_name: string;
+  status: string;
+  profile_photo?: string;
+}
+
 const EMPTY_FORM: GroupFormValues = {
   name: '', organizationId: '', subcityId: '', woredaId: '',
   locationName: '', latitude: null, longitude: null, geofenceRadius: 200,
@@ -225,6 +232,9 @@ export default function Groups() {
   const [deleteTarget, setDeleteTarget] = useState<GroupWithCount | null>(null);
   const [form, setForm]               = useState<GroupFormValues>(EMPTY_FORM);
   const [saving, setSaving]           = useState(false);
+  // members per group: groupId → member list
+  const [groupMembers, setGroupMembers] = useState<Record<string, GroupMember[]>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const [filterOrg, setFilterOrg]         = useState('');
   const [filterSubcity, setFilterSubcity] = useState('');
@@ -238,11 +248,12 @@ export default function Groups() {
 
   async function load() {
     setLoading(true);
-    const [{ data: grps }, { data: orgData }, { data: sc }, { data: wr }] = await Promise.all([
+    const [{ data: grps }, { data: orgData }, { data: sc }, { data: wr }, { data: membersData }] = await Promise.all([
       supabase.from('groups').select('*, woreda:woredas(*), memberCount:members(count)').order('name'),
       supabase.from('organizations').select('*').eq('has_groups', true).order('name'),
       supabase.from('subcities').select('*').order('name'),
       supabase.from('woredas').select('*, subcity:subcities(*)').order('name'),
+      supabase.from('members').select('id, full_name, status, profile_photo, group_id').not('group_id', 'is', null),
     ]);
     if (grps) {
       setGroups((grps as Record<string, unknown>[]).map(g => ({
@@ -257,6 +268,22 @@ export default function Groups() {
     }
     if (sc) setSubcities(sc as Subcity[]);
     if (wr) setAllWoredas((wr as Record<string, unknown>[]).map(mapWoreda));
+    if (membersData) {
+      // Group members by group_id
+      const byGroup: Record<string, GroupMember[]> = {};
+      (membersData as Record<string, unknown>[]).forEach(m => {
+        const gid = m.group_id as string;
+        if (!gid) return;
+        if (!byGroup[gid]) byGroup[gid] = [];
+        byGroup[gid].push({
+          id: m.id as string,
+          full_name: m.full_name as string,
+          status: m.status as string,
+          profile_photo: m.profile_photo as string | undefined,
+        });
+      });
+      setGroupMembers(byGroup);
+    }
     setLoading(false);
   }
 
@@ -377,6 +404,13 @@ export default function Groups() {
       return n;
     });
 
+  const toggleGroup = (id: string) =>
+    setExpandedGroups(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
   const visibleGroups = groups.filter(g =>
     (!filterOrg || g.organizationId === filterOrg) &&
     (!filterWoreda || g.woredaId === filterWoreda),
@@ -459,34 +493,71 @@ export default function Groups() {
                 {orgGroups.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-4">No groups yet for this organization</p>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {orgGroups.map(g => (
-                      <Card key={g.id} className="relative group/card">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-semibold text-gray-900 dark:text-white text-sm">{g.name}</p>
-                            {g.woreda && <p className="text-xs text-gray-400 mt-0.5">{g.woreda.name}</p>}
-                          </div>
-                          <div className="flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                            <button onClick={() => openEdit(g)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600">
-                              <Edit size={13} />
+                  <div className="space-y-3">
+                    {orgGroups.map(g => {
+                      const members = groupMembers[g.id] ?? [];
+                      const isGroupExpanded = expandedGroups.has(g.id);
+                      return (
+                        <div key={g.id} className="border border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden">
+                          {/* Group header */}
+                          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+                            <button
+                              onClick={() => toggleGroup(g.id)}
+                              className="flex items-center gap-2 flex-1 text-left"
+                            >
+                              {isGroupExpanded
+                                ? <ChevronDown size={14} className="text-gray-400 shrink-0" />
+                                : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
+                              <span className="font-semibold text-gray-900 dark:text-white text-sm">{g.name}</span>
+                              {g.woreda && <span className="text-xs text-gray-400">— {g.woreda.name}</span>}
                             </button>
-                            <button onClick={() => setDeleteTarget(g)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500">
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={clsx(
+                                'text-xs font-medium flex items-center gap-1',
+                                g.memberCount >= 2 ? 'text-green-600' : 'text-red-500'
+                              )}>
+                                <Users size={12} />
+                                {g.memberCount}
+                              </span>
+                              {g.memberCount < 2 && <Badge label="min 2" variant="danger" size="sm" />}
+                              <button onClick={() => openEdit(g)}
+                                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 hover:text-blue-600">
+                                <Edit size={13} />
+                              </button>
+                              <button onClick={() => setDeleteTarget(g)}
+                                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 hover:text-red-500">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
+                          {/* Member list */}
+                          {isGroupExpanded && (
+                            <div className="px-4 py-3 bg-white dark:bg-gray-800">
+                              {members.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-2">No members in this group yet</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {members.map((m, idx) => (
+                                    <div key={m.id} className="flex items-center gap-3 py-1">
+                                      <span className="text-xs text-gray-400 w-5 text-right shrink-0">{idx + 1}</span>
+                                      <div className="w-7 h-7 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-xs font-bold text-green-700 dark:text-green-400 shrink-0">
+                                        {m.full_name?.[0]?.toUpperCase() ?? '?'}
+                                      </div>
+                                      <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">{m.full_name}</span>
+                                      <Badge
+                                        label={m.status}
+                                        variant={m.status === 'ACTIVE' ? 'success' : m.status === 'INACTIVE' ? 'default' : 'danger'}
+                                        size="sm"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 mt-3">
-                          <Users size={13} className="text-gray-400" />
-                          <span className={clsx('text-xs font-medium', g.memberCount >= 2 ? 'text-green-600' : 'text-red-500')}>
-                            {g.memberCount} member{g.memberCount !== 1 ? 's' : ''}
-                          </span>
-                          {g.memberCount < 2 && <Badge label="min 2 required" variant="danger" size="sm" />}
-                        </div>
-                      </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

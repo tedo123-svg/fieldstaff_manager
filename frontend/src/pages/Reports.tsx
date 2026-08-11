@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
-import { mapOrg, mapWoreda, mapGroup } from '../lib/mappers';
+import { mapOrg, mapWoreda, mapGroup, mapMember } from '../lib/mappers';
 
 const REPORT_TYPES = [
   { key: 'members', labelKey: 'reports.memberList', icon: '👥' },
@@ -72,30 +72,45 @@ export default function Reports() {
         if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
         if (filter.groupId)        query = query.eq('group_id', filter.groupId);
         if (filter.memberId)       query = query.eq('id', filter.memberId);
-        const { data } = await query;
-        setReportData((data as Member[]) ?? []);
+        const { data, error } = await query;
+        if (error) throw error;
+        setReportData(((data ?? []) as Record<string, unknown>[]).map(mapMember));
+
       } else if (filter.type === 'attendance' || filter.type === 'late') {
         let query = supabase
           .from('attendances')
           .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
           .gte('date', filter.dateFrom)
           .lte('date', filter.dateTo);
-        if (filter.memberId)       query = query.eq('member_id', filter.memberId);
+        if (filter.memberId)        query = query.eq('member_id', filter.memberId);
         if (filter.type === 'late') query = query.eq('status', 'LATE');
-        const { data } = await query;
-        setReportData((data as Attendance[]) ?? []);
+        const { data, error } = await query;
+        if (error) throw error;
+        // Map nested member
+        const rows = ((data ?? []) as Record<string, unknown>[]).map(r => ({
+          ...r,
+          memberId:  r.member_id,
+          checkIn:   r.check_in,
+          checkOut:  r.check_out,
+          createdAt: r.created_at,
+          member:    r.member ? mapMember(r.member as Record<string, unknown>) : undefined,
+        }));
+        setReportData(rows as unknown as Attendance[]);
+
       } else if (filter.type === 'location' || filter.type === 'outside') {
         let query = supabase
           .from('members')
-          .select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*), lastLocation:gps_locations(*)')
-          .not('gps_locations', 'is', null);
+          .select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*), lastLocation:gps_locations(*)');
         if (filter.subcityId)      query = query.eq('subcity_id', filter.subcityId);
         if (filter.woredaId)       query = query.eq('woreda_id', filter.woredaId);
         if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
         if (filter.groupId)        query = query.eq('group_id', filter.groupId);
         if (filter.type === 'outside') query = query.eq('location_status', 'OUTSIDE');
-        const { data } = await query;
-        setReportData((data as Member[]) ?? []);
+        const { data, error } = await query;
+        if (error) throw error;
+        // Filter to only members who have GPS data
+        const mapped = ((data ?? []) as Record<string, unknown>[]).map(mapMember);
+        setReportData(filter.type === 'outside' ? mapped : mapped.filter(m => m.lastLocation));
       }
       setGenerated(true);
       toast.success('Report generated');
