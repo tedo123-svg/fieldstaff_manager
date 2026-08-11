@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, FileText, FileSpreadsheet, Filter } from 'lucide-react';
-import type { Member, Attendance, Organization, ReportFilter } from '../types';
+import type { Member, Attendance, Organization, Subcity, Woreda, Group, ReportFilter } from '../types';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
@@ -25,18 +25,36 @@ const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
 export default function Reports() {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<ReportFilter>({
-    type: 'members', dateFrom: weekAgo, dateTo: today, organizationId: '', memberId: '',
+    type: 'members', dateFrom: weekAgo, dateTo: today,
+    organizationId: '', subcityId: '', woredaId: '', groupId: '', memberId: '',
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [subcities, setSubcities] = useState<Subcity[]>([]);
+  const [allWoredas, setAllWoredas] = useState<Woreda[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [reportData, setReportData] = useState<(Member | Attendance)[]>([]);
   const [generated, setGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.from('organizations').select('*').then(({ data }) => {
-      if (data) setOrganizations(data as Organization[]);
+    Promise.all([
+      supabase.from('organizations').select('*'),
+      supabase.from('subcities').select('*').order('name'),
+      supabase.from('woredas').select('*').order('name'),
+      supabase.from('groups').select('*').order('name'),
+    ]).then(([{ data: orgs }, { data: sc }, { data: wr }, { data: grps }]) => {
+      if (orgs) setOrganizations(orgs as Organization[]);
+      if (sc)   setSubcities(sc as Subcity[]);
+      if (wr)   setAllWoredas(wr as Woreda[]);
+      if (grps) setAllGroups(grps as Group[]);
     });
   }, []);
+
+  const filteredWoredas = allWoredas.filter(w => !filter.subcityId || w.subcityId === filter.subcityId);
+  const filteredGroups  = allGroups.filter(g =>
+    (!filter.organizationId || g.organizationId === filter.organizationId) &&
+    (!filter.woredaId || g.woredaId === filter.woredaId)
+  );
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -44,28 +62,39 @@ export default function Reports() {
 
     try {
       if (filter.type === 'members') {
-        let query = supabase.from('members').select('*, organization:organizations(*)');
+        let query = supabase.from('members').select(`
+          *, organization:organizations(*), group:groups(*),
+          woreda:woredas(*), subcity:subcities(*)
+        `);
+        if (filter.subcityId)      query = query.eq('subcity_id', filter.subcityId);
+        if (filter.woredaId)       query = query.eq('woreda_id', filter.woredaId);
         if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
-        if (filter.memberId) query = query.eq('id', filter.memberId);
+        if (filter.groupId)        query = query.eq('group_id', filter.groupId);
+        if (filter.memberId)       query = query.eq('id', filter.memberId);
         const { data } = await query;
         setReportData((data as Member[]) ?? []);
       } else if (filter.type === 'attendance' || filter.type === 'late') {
         let query = supabase
           .from('attendances')
-          .select('*, member:members(*, organization:organizations(*))')
+          .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
           .gte('date', filter.dateFrom)
           .lte('date', filter.dateTo);
         if (filter.organizationId) query = query.eq('member.organization_id', filter.organizationId);
-        if (filter.memberId) query = query.eq('member_id', filter.memberId);
+        if (filter.woredaId)       query = query.eq('member.woreda_id', filter.woredaId);
+        if (filter.groupId)        query = query.eq('member.group_id', filter.groupId);
+        if (filter.memberId)       query = query.eq('member_id', filter.memberId);
         if (filter.type === 'late') query = query.eq('status', 'LATE');
         const { data } = await query;
         setReportData((data as Attendance[]) ?? []);
       } else if (filter.type === 'location' || filter.type === 'outside') {
         let query = supabase
           .from('members')
-          .select('*, organization:organizations(*), lastLocation:gps_locations(*)')
+          .select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*), lastLocation:gps_locations(*)')
           .not('lastLocation', 'is', null);
+        if (filter.subcityId)      query = query.eq('subcity_id', filter.subcityId);
+        if (filter.woredaId)       query = query.eq('woreda_id', filter.woredaId);
         if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
+        if (filter.groupId)        query = query.eq('group_id', filter.groupId);
         if (filter.type === 'outside') query = query.eq('location_status', 'OUTSIDE');
         const { data } = await query;
         setReportData((data as Member[]) ?? []);
@@ -97,7 +126,7 @@ export default function Reports() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
-              <tr>{['#', 'Name', 'ID', 'Organization', 'Role', 'Phone', 'Status', 'Reg. Date'].map(h => (
+              <tr>{['#', 'Name', 'ID', 'Subcity / Woreda', 'Organization / Group', 'Role', 'Phone', 'Status'].map(h => (
                 <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
               ))}</tr>
             </thead>
@@ -112,11 +141,17 @@ export default function Reports() {
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-xs text-gray-500">{m.memberId}</td>
-                  <td className="py-3 px-4"><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: m.organization?.color + '20', color: m.organization?.color }}>{m.organization?.name}</span></td>
+                  <td className="py-3 px-4">
+                    <p className="text-xs text-gray-700 dark:text-gray-300">{m.subcity?.name ?? '–'}</p>
+                    <p className="text-xs text-gray-400">{m.woreda?.name ?? '–'}</p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium block w-fit" style={{ backgroundColor: m.organization?.color + '20', color: m.organization?.color }}>{m.organization?.name}</span>
+                    {m.group && <p className="text-xs text-gray-400 mt-0.5">{m.group.name}</p>}
+                  </td>
                   <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{m.jobRole}</td>
                   <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{m.phone}</td>
                   <td className="py-3 px-4"><Badge label={m.status} variant={m.status === 'ACTIVE' ? 'success' : 'default'} /></td>
-                  <td className="py-3 px-4 text-gray-500 text-xs">{format(new Date(m.registrationDate), 'dd MMM yyyy')}</td>
                 </tr>
               ))}
             </tbody>
@@ -230,13 +265,37 @@ export default function Reports() {
               </div>
             )}
 
-            {/* Organization */}
+            {/* Hierarchy filters */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">ክፍለ ከተማ (Subcity)</label>
+              <select value={filter.subcityId ?? ''} onChange={e => setFilter(p => ({ ...p, subcityId: e.target.value, woredaId: '', groupId: '' }))}
+                className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
+                <option value="">All</option>
+                {subcities.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">ወረዳ (Woreda)</label>
+              <select value={filter.woredaId ?? ''} onChange={e => setFilter(p => ({ ...p, woredaId: e.target.value, groupId: '' }))}
+                className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
+                <option value="">All</option>
+                {filteredWoredas.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">{t('members.organization')}</label>
-              <select value={filter.organizationId} onChange={e => setFilter(p => ({ ...p, organizationId: e.target.value }))}
+              <select value={filter.organizationId} onChange={e => setFilter(p => ({ ...p, organizationId: e.target.value, groupId: '' }))}
                 className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="">{t('common.all')}</option>
                 {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">ቡድን (Group)</label>
+              <select value={filter.groupId ?? ''} onChange={e => setFilter(p => ({ ...p, groupId: e.target.value }))}
+                className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
+                <option value="">All</option>
+                {filteredGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </div>
 

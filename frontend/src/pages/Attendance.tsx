@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserCheck, UserX, Clock, Briefcase } from 'lucide-react';
-import type { Attendance as AttendanceType, Organization } from '../types';
+import type { Attendance as AttendanceType, Organization, Woreda, Group } from '../types';
 import Card from '../components/common/Card';
 import Badge from '../components/common/Badge';
 import Avatar from '../components/common/Avatar';
@@ -15,29 +15,44 @@ export default function Attendance() {
   const { t } = useTranslation();
   const [date, setDate] = useState(today);
   const [orgFilter, setOrgFilter] = useState('');
+  const [woredaFilter, setWoredaFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
   const [records, setRecords] = useState<AttendanceType[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [allWoredas, setAllWoredas] = useState<Woreda[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadOrgs() {
-      const { data } = await supabase.from('organizations').select('*');
-      if (data) setOrganizations(data as Organization[]);
-    }
-    loadOrgs();
+    Promise.all([
+      supabase.from('organizations').select('*'),
+      supabase.from('woredas').select('*').order('name'),
+      supabase.from('groups').select('*').order('name'),
+    ]).then(([{ data: orgs }, { data: wr }, { data: grps }]) => {
+      if (orgs)  setOrganizations(orgs as Organization[]);
+      if (wr)    setAllWoredas(wr as Woreda[]);
+      if (grps)  setAllGroups(grps as Group[]);
+    });
   }, []);
+
+  // Groups visible based on selected org filter
+  const visibleGroups = allGroups.filter(g =>
+    !orgFilter || g.organizationId === orgFilter
+  );
 
   useEffect(() => {
     async function loadAttendance() {
       setLoading(true);
       let query = supabase
         .from('attendances')
-        .select('*, member:members(*, organization:organizations(*))')
+        .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
         .eq('date', date);
 
-      if (orgFilter) query = query.eq('member.organization_id', orgFilter);
+      if (orgFilter)    query = query.eq('member.organization_id', orgFilter);
+      if (woredaFilter) query = query.eq('member.woreda_id', woredaFilter);
+      if (groupFilter)  query = query.eq('member.group_id', groupFilter);
       if (statusFilter) query = query.eq('status', statusFilter);
 
       const { data } = await query;
@@ -54,7 +69,7 @@ export default function Attendance() {
       setLoading(false);
     }
     loadAttendance();
-  }, [date, orgFilter, statusFilter, search]);
+  }, [date, orgFilter, woredaFilter, groupFilter, statusFilter, search]);
 
   const summary = {
     present: records.filter(r => r.status === 'PRESENT').length,
@@ -104,17 +119,23 @@ export default function Attendance() {
           type="date" value={date} onChange={e => setDate(e.target.value)}
           className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
         />
-        <select
-          value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-        >
+        <select value={woredaFilter} onChange={e => setWoredaFilter(e.target.value)}
+          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
+          <option value="">All Woredas</option>
+          {allWoredas.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+        <select value={orgFilter} onChange={e => { setOrgFilter(e.target.value); setGroupFilter(''); }}
+          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
           <option value="">{t('common.all')} {t('orgs.title')}</option>
           {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        <select
-          value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-        >
+        <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
+          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
+          <option value="">All Groups</option>
+          {visibleGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
           <option value="">{t('common.all')} Status</option>
           <option value="PRESENT">{t('status.present')}</option>
           <option value="ABSENT">{t('status.absent')}</option>
@@ -138,14 +159,14 @@ export default function Attendance() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
-                  {[t('attendance.member'), 'Organization', t('attendance.date'), 'Check In', 'Check Out', t('members.status')].map(h => (
+                  {[t('attendance.member'), 'Woreda / Group', 'Organization', t('attendance.date'), 'Check In', 'Check Out', t('members.status')].map(h => (
                     <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {records.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('attendance.noRecords')}</td></tr>
+                  <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('attendance.noRecords')}</td></tr>
                 ) : records.map(r => (
                   <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                     <td className="py-3 px-4">
@@ -156,6 +177,10 @@ export default function Attendance() {
                           <p className="text-xs text-gray-400 font-mono">{r.member?.memberId}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <p className="text-xs text-gray-600 dark:text-gray-300">{r.member?.woreda?.name ?? '–'}</p>
+                      {r.member?.group && <p className="text-xs text-gray-400">{r.member.group.name}</p>}
                     </td>
                     <td className="py-3 px-4">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full"

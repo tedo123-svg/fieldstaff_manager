@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Building2, Users, Map, ClipboardList,
   MapPin, FileBarChart, Bell, Settings, LogOut, ChevronLeft, ChevronRight,
+  Group,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,15 +16,16 @@ interface SidebarProps {
 }
 
 const NAV = [
-  { to: '/', icon: LayoutDashboard, key: 'dashboard' },
-  { to: '/organizations', icon: Building2, key: 'organizations' },
-  { to: '/members', icon: Users, key: 'members' },
-  { to: '/live-map', icon: Map, key: 'liveMap' },
-  { to: '/attendance', icon: ClipboardList, key: 'attendance' },
-  { to: '/work-locations', icon: MapPin, key: 'workLocations' },
-  { to: '/reports', icon: FileBarChart, key: 'reports' },
-  { to: '/notifications', icon: Bell, key: 'notifications' },
-  { to: '/settings', icon: Settings, key: 'settings' },
+  { to: '/',              icon: LayoutDashboard, key: 'dashboard' },
+  { to: '/organizations', icon: Building2,       key: 'organizations' },
+  { to: '/members',       icon: Users,           key: 'members' },
+  { to: '/groups',        icon: Group,           key: 'groups' },
+  { to: '/live-map',      icon: Map,             key: 'liveMap' },
+  { to: '/attendance',    icon: ClipboardList,   key: 'attendance' },
+  { to: '/work-locations',icon: MapPin,          key: 'workLocations' },
+  { to: '/reports',       icon: FileBarChart,    key: 'reports' },
+  { to: '/notifications', icon: Bell,            key: 'notifications' },
+  { to: '/settings',      icon: Settings,        key: 'settings' },
 ];
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {

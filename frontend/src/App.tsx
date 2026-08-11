@@ -8,6 +8,7 @@ import Organizations from './pages/Organizations';
 import OrganizationDetail from './pages/OrganizationDetail';
 import Members from './pages/Members';
 import MemberDetail from './pages/MemberDetail';
+import Groups from './pages/Groups';
 import LiveMap from './pages/LiveMap';
 import Attendance from './pages/Attendance';
 import WorkLocations from './pages/WorkLocations';
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="organizations/:id" element={<OrganizationDetail />} />
           <Route path="members" element={<Members />} />
           <Route path="members/:id" element={<MemberDetail />} />
+          <Route path="groups" element={<Groups />} />
           <Route path="live-map" element={<LiveMap />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="work-locations" element={<WorkLocations />} />
