@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { supabase } from '../lib/supabase';
+import { mapOrg, mapWoreda, mapGroup } from '../lib/mappers';
 
 const REPORT_TYPES = [
   { key: 'members', labelKey: 'reports.memberList', icon: '👥' },
@@ -40,13 +41,13 @@ export default function Reports() {
     Promise.all([
       supabase.from('organizations').select('*'),
       supabase.from('subcities').select('*').order('name'),
-      supabase.from('woredas').select('*').order('name'),
+      supabase.from('woredas').select('*, subcity:subcities(*)').order('name'),
       supabase.from('groups').select('*').order('name'),
     ]).then(([{ data: orgs }, { data: sc }, { data: wr }, { data: grps }]) => {
-      if (orgs) setOrganizations(orgs as Organization[]);
+      if (orgs) setOrganizations((orgs as Record<string, unknown>[]).map(mapOrg));
       if (sc)   setSubcities(sc as Subcity[]);
-      if (wr)   setAllWoredas(wr as Woreda[]);
-      if (grps) setAllGroups(grps as Group[]);
+      if (wr)   setAllWoredas((wr as Record<string, unknown>[]).map(mapWoreda));
+      if (grps) setAllGroups((grps as Record<string, unknown>[]).map(mapGroup));
     });
   }, []);
 
@@ -66,10 +67,10 @@ export default function Reports() {
           *, organization:organizations(*), group:groups(*),
           woreda:woredas(*), subcity:subcities(*)
         `);
-        if (filter.subcityId)      query = query.eq('subcityId', filter.subcityId);
-        if (filter.woredaId)       query = query.eq('woredaId', filter.woredaId);
-        if (filter.organizationId) query = query.eq('organizationId', filter.organizationId);
-        if (filter.groupId)        query = query.eq('groupId', filter.groupId);
+        if (filter.subcityId)      query = query.eq('subcity_id', filter.subcityId);
+        if (filter.woredaId)       query = query.eq('woreda_id', filter.woredaId);
+        if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
+        if (filter.groupId)        query = query.eq('group_id', filter.groupId);
         if (filter.memberId)       query = query.eq('id', filter.memberId);
         const { data } = await query;
         setReportData((data as Member[]) ?? []);
@@ -79,10 +80,7 @@ export default function Reports() {
           .select('*, member:members(*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*))')
           .gte('date', filter.dateFrom)
           .lte('date', filter.dateTo);
-        if (filter.organizationId) query = query.eq('member.organizationId', filter.organizationId);
-        if (filter.woredaId)       query = query.eq('member.woredaId', filter.woredaId);
-        if (filter.groupId)        query = query.eq('member.groupId', filter.groupId);
-        if (filter.memberId)       query = query.eq('memberId', filter.memberId);
+        if (filter.memberId)       query = query.eq('member_id', filter.memberId);
         if (filter.type === 'late') query = query.eq('status', 'LATE');
         const { data } = await query;
         setReportData((data as Attendance[]) ?? []);
@@ -90,12 +88,12 @@ export default function Reports() {
         let query = supabase
           .from('members')
           .select('*, organization:organizations(*), group:groups(*), woreda:woredas(*), subcity:subcities(*), lastLocation:gps_locations(*)')
-          .not('lastLocation', 'is', null);
-        if (filter.subcityId)      query = query.eq('subcityId', filter.subcityId);
-        if (filter.woredaId)       query = query.eq('woredaId', filter.woredaId);
-        if (filter.organizationId) query = query.eq('organizationId', filter.organizationId);
-        if (filter.groupId)        query = query.eq('groupId', filter.groupId);
-        if (filter.type === 'outside') query = query.eq('locationStatus', 'OUTSIDE');
+          .not('gps_locations', 'is', null);
+        if (filter.subcityId)      query = query.eq('subcity_id', filter.subcityId);
+        if (filter.woredaId)       query = query.eq('woreda_id', filter.woredaId);
+        if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
+        if (filter.groupId)        query = query.eq('group_id', filter.groupId);
+        if (filter.type === 'outside') query = query.eq('location_status', 'OUTSIDE');
         const { data } = await query;
         setReportData((data as Member[]) ?? []);
       }
