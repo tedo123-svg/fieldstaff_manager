@@ -4,13 +4,13 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-le
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, Users, Building2, Phone } from 'lucide-react';
-import { MEMBERS, ORGANIZATIONS, WORK_LOCATIONS } from '../data/mockData';
-import type { Member } from '../types';
+import type { Member, Organization, WorkLocation } from '../types';
 import Avatar from '../components/common/Avatar';
 import Badge from '../components/common/Badge';
 import SearchBar from '../components/common/SearchBar';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
+import { supabase } from '../lib/supabase';
 
 // Fix default marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -61,7 +61,25 @@ export default function LiveMap() {
   const [showWorkLocations, setShowWorkLocations] = useState(true);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
 
-  const activeMembers = MEMBERS.filter(m => {
+  const [members, setMembers] = useState<Member[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [workLocations, setWorkLocations] = useState<WorkLocation[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: membersData }, { data: orgsData }, { data: locsData }] = await Promise.all([
+        supabase.from('members').select('*, organization:organizations(*), lastLocation:gps_locations(*)').eq('is_sharing', true),
+        supabase.from('organizations').select('*'),
+        supabase.from('work_locations').select('*'),
+      ]);
+      if (membersData) setMembers(membersData as Member[]);
+      if (orgsData) setOrganizations(orgsData as Organization[]);
+      if (locsData) setWorkLocations(locsData as WorkLocation[]);
+    }
+    load();
+  }, []);
+
+  const activeMembers = members.filter(m => {
     if (!m.isSharing || !m.lastLocation) return false;
     if (selectedOrg && m.organizationId !== selectedOrg) return false;
     if (search) {
@@ -71,7 +89,7 @@ export default function LiveMap() {
     return true;
   });
 
-  const filteredLocations = WORK_LOCATIONS.filter(l =>
+  const filteredLocations = workLocations.filter(l =>
     !selectedOrg || l.organizationId === selectedOrg
   );
 
@@ -87,7 +105,7 @@ export default function LiveMap() {
           className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           <option value="">{t('map.allOrgs')}</option>
-          {ORGANIZATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
 
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
@@ -196,7 +214,7 @@ export default function LiveMap() {
               ) : activeMembers.map(m => (
                 <div
                   key={m.id}
-                  onClick={() => { setSelectedMember(m); }}
+                  onClick={() => setSelectedMember(m)}
                   className={clsx(
                     'flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors',
                     selectedMember?.id === m.id
@@ -230,7 +248,7 @@ export default function LiveMap() {
           {/* Legend */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Organizations</p>
-            {ORGANIZATIONS.map(o => (
+            {organizations.map(o => (
               <div key={o.id} className="flex items-center gap-2 py-1">
                 <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: o.color }} />
                 <span className="text-xs text-gray-600 dark:text-gray-400">{o.name}</span>

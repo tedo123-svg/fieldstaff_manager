@@ -1,9 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Phone, MapPin, Navigation, Calendar, Edit, Trash2, Clock } from 'lucide-react';
-import { useState } from 'react';
-import { MEMBERS } from '../data/mockData';
+import { useState, useEffect } from 'react';
 import type { Member } from '../types';
+import { supabase } from '../lib/supabase';
 import Avatar from '../components/common/Avatar';
 import Badge from '../components/common/Badge';
 import Card from '../components/common/Card';
@@ -32,9 +32,34 @@ export default function MemberDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const [member, setMember] = useState<Member | undefined>(MEMBERS.find(m => m.id === id));
+  const [member, setMember] = useState<Member | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    supabase
+      .from('members')
+      .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')
+      .eq('id', id)
+      .single()
+      .then(({ data }) => {
+        if (data) setMember(data as Member);
+        setLoading(false);
+      });
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        <svg className="animate-spin w-8 h-8" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
 
   if (!member) return (
     <div className="flex flex-col items-center justify-center h-64 text-gray-400">
@@ -48,13 +73,33 @@ export default function MemberDetail() {
   const locStatus = member.locationStatus ? locationStatusConfig[member.locationStatus] : null;
   const attStatus = member.todayAttendance?.status ? attendanceConfig[member.todayAttendance.status] : null;
 
-  const handleEdit = (data: Partial<Member>) => {
-    setMember(p => p ? { ...p, ...data, organization: p.organization } : p);
+  const handleEdit = async (data: Partial<Member>) => {
+    if (!member) return;
+    const { data: updated, error } = await supabase
+      .from('members')
+      .update({
+        full_name: data.fullName,
+        gender: data.gender,
+        phone: data.phone,
+        job_role: data.jobRole,
+        work_address: data.workAddress,
+        emergency_contact: data.emergencyContact,
+        notes: data.notes,
+        status: data.status,
+      })
+      .eq('id', member.id)
+      .select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)')
+      .single();
+    if (error) { toast.error('Failed to update member'); return; }
+    setMember(updated as Member);
     setEditOpen(false);
     toast.success('Member updated successfully');
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (!member) return;
+    const { error } = await supabase.from('members').delete().eq('id', member.id);
+    if (error) { toast.error('Failed to delete member'); return; }
     navigate('/members');
     toast.success('Member removed');
   };

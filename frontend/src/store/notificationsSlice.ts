@@ -1,6 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { Notification } from '../types';
-import { NOTIFICATIONS } from '../data/mockData';
 
 interface NotificationsState {
   items: Notification[];
@@ -8,8 +7,8 @@ interface NotificationsState {
 }
 
 const initialState: NotificationsState = {
-  items: NOTIFICATIONS,
-  unreadCount: NOTIFICATIONS.filter(n => !n.isRead).length,
+  items: [],
+  unreadCount: 0,
 };
 
 const notificationsSlice = createSlice({

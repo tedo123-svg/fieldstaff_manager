@@ -1,16 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UserCheck, UserX, Clock, Briefcase, ChevronDown } from 'lucide-react';
-import { MEMBERS, ORGANIZATIONS, getAttendanceHistory } from '../data/mockData';
-import type { Attendance as AttendanceType } from '../types';
+import { UserCheck, UserX, Clock, Briefcase } from 'lucide-react';
+import type { Attendance as AttendanceType, Organization } from '../types';
 import Card from '../components/common/Card';
 import Badge from '../components/common/Badge';
 import Avatar from '../components/common/Avatar';
 import SearchBar from '../components/common/SearchBar';
 import { format } from 'date-fns';
+import { supabase } from '../lib/supabase';
 
 const today = new Date().toISOString().slice(0, 10);
-const allAttendance = getAttendanceHistory();
 
 export default function Attendance() {
   const { t } = useTranslation();
@@ -18,17 +17,44 @@ export default function Attendance() {
   const [orgFilter, setOrgFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [records, setRecords] = useState<AttendanceType[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const records = allAttendance.filter(a => {
-    if (a.date !== date) return false;
-    if (orgFilter && a.member?.organizationId !== orgFilter) return false;
-    if (statusFilter && a.status !== statusFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return a.member?.fullName.toLowerCase().includes(q) || a.member?.memberId.toLowerCase().includes(q);
+  useEffect(() => {
+    async function loadOrgs() {
+      const { data } = await supabase.from('organizations').select('*');
+      if (data) setOrganizations(data as Organization[]);
     }
-    return true;
-  });
+    loadOrgs();
+  }, []);
+
+  useEffect(() => {
+    async function loadAttendance() {
+      setLoading(true);
+      let query = supabase
+        .from('attendances')
+        .select('*, member:members(*, organization:organizations(*))')
+        .eq('date', date);
+
+      if (orgFilter) query = query.eq('member.organization_id', orgFilter);
+      if (statusFilter) query = query.eq('status', statusFilter);
+
+      const { data } = await query;
+      if (data) {
+        let filtered = data as AttendanceType[];
+        if (search) {
+          const q = search.toLowerCase();
+          filtered = filtered.filter(a =>
+            a.member?.fullName.toLowerCase().includes(q) || a.member?.memberId.toLowerCase().includes(q)
+          );
+        }
+        setRecords(filtered);
+      }
+      setLoading(false);
+    }
+    loadAttendance();
+  }, [date, orgFilter, statusFilter, search]);
 
   const summary = {
     present: records.filter(r => r.status === 'PRESENT').length,
@@ -83,7 +109,7 @@ export default function Attendance() {
           className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           <option value="">{t('common.all')} {t('orgs.title')}</option>
-          {ORGANIZATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
         <select
           value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -101,42 +127,51 @@ export default function Attendance() {
       {/* Table */}
       <Card padding={false}>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-700/50">
-              <tr>
-                {[t('attendance.member'), 'Organization', t('attendance.date'), 'Check In', 'Check Out', t('members.status')].map(h => (
-                  <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {records.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('attendance.noRecords')}</td></tr>
-              ) : records.map(r => (
-                <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar src={r.member?.profilePhoto} name={r.member?.fullName ?? '?'} size="sm" />
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white text-sm">{r.member?.fullName}</p>
-                        <p className="text-xs text-gray-400 font-mono">{r.member?.memberId}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: r.member?.organization?.color + '20', color: r.member?.organization?.color }}>
-                      {r.member?.organization?.name}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-gray-600 dark:text-gray-400 text-sm">{format(new Date(r.date + 'T00:00:00'), 'dd MMM yyyy')}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-gray-700 dark:text-gray-300">{r.checkIn ?? '–'}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-gray-700 dark:text-gray-300">{r.checkOut ?? '–'}</td>
-                  <td className="py-3 px-4"><Badge label={r.status} variant={statusVariant[r.status]} /></td>
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-gray-400">
+              <svg className="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700/50">
+                <tr>
+                  {[t('attendance.member'), 'Organization', t('attendance.date'), 'Check In', 'Check Out', t('members.status')].map(h => (
+                    <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {records.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('attendance.noRecords')}</td></tr>
+                ) : records.map(r => (
+                  <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar src={r.member?.profilePhoto} name={r.member?.fullName ?? '?'} size="sm" />
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white text-sm">{r.member?.fullName}</p>
+                          <p className="text-xs text-gray-400 font-mono">{r.member?.memberId}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: r.member?.organization?.color + '20', color: r.member?.organization?.color }}>
+                        {r.member?.organization?.name}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-gray-600 dark:text-gray-400 text-sm">{format(new Date(r.date + 'T00:00:00'), 'dd MMM yyyy')}</td>
+                    <td className="py-3 px-4 font-mono text-sm text-gray-700 dark:text-gray-300">{r.checkIn ?? '–'}</td>
+                    <td className="py-3 px-4 font-mono text-sm text-gray-700 dark:text-gray-300">{r.checkOut ?? '–'}</td>
+                    <td className="py-3 px-4"><Badge label={r.status} variant={statusVariant[r.status]} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
     </div>

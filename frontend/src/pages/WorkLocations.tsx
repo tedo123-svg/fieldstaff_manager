@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin, Plus, Edit, Trash2, Clock, Radio } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { WORK_LOCATIONS, ORGANIZATIONS, MEMBERS } from '../data/mockData';
-import type { WorkLocation } from '../types';
+import type { WorkLocation, Organization } from '../types';
 import Card from '../components/common/Card';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
@@ -13,6 +12,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { supabase } from '../lib/supabase';
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -25,7 +25,9 @@ const CENTER: [number, number] = [9.0192, 38.7525];
 
 export default function WorkLocations() {
   const { t } = useTranslation();
-  const [locations, setLocations] = useState<WorkLocation[]>(WORK_LOCATIONS);
+  const [locations, setLocations] = useState<WorkLocation[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<WorkLocation | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -40,32 +42,49 @@ export default function WorkLocations() {
 
   const resetForm = () => setForm({ name: '', address: '', latitude: '', longitude: '', organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00', geofenceRadius: '200', status: 'ACTIVE' });
 
-  const handleAdd = () => {
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [{ data: locsData }, { data: orgsData }] = await Promise.all([
+        supabase.from('work_locations').select('*'),
+        supabase.from('organizations').select('*'),
+      ]);
+      if (locsData) setLocations(locsData as WorkLocation[]);
+      if (orgsData) setOrganizations(orgsData as Organization[]);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const handleAdd = async () => {
     if (!form.name || !form.address || !form.latitude || !form.longitude || !form.organizationId) {
       toast.error('Please fill all required fields'); return;
     }
-    const newLoc: WorkLocation = {
-      id: `wl-${Date.now()}`, name: form.name, address: form.address,
+    const { data, error } = await supabase.from('work_locations').insert([{
+      name: form.name, address: form.address,
       latitude: parseFloat(form.latitude), longitude: parseFloat(form.longitude),
-      organizationId: form.organizationId, workingHoursStart: form.workingHoursStart,
-      workingHoursEnd: form.workingHoursEnd, geofenceRadius: parseInt(form.geofenceRadius),
-      status: form.status,
-    };
-    setLocations(p => [...p, newLoc]);
+      organization_id: form.organizationId,
+      working_hours_start: form.workingHoursStart, working_hours_end: form.workingHoursEnd,
+      geofence_radius: parseInt(form.geofenceRadius), status: form.status,
+    }]).select().single();
+    if (error) { toast.error('Failed to add location'); return; }
+    setLocations(p => [...p, data as WorkLocation]);
     setAddOpen(false); resetForm();
     toast.success('Work location added');
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (!selected) return;
-    setLocations(p => p.map(l => l.id === selected.id ? {
-      ...l, name: form.name || l.name, address: form.address || l.address,
-      latitude: form.latitude ? parseFloat(form.latitude) : l.latitude,
-      longitude: form.longitude ? parseFloat(form.longitude) : l.longitude,
-      organizationId: form.organizationId || l.organizationId,
-      workingHoursStart: form.workingHoursStart, workingHoursEnd: form.workingHoursEnd,
-      geofenceRadius: parseInt(form.geofenceRadius), status: form.status,
-    } : l));
+    const { data, error } = await supabase.from('work_locations').update({
+      name: form.name || selected.name, address: form.address || selected.address,
+      latitude: form.latitude ? parseFloat(form.latitude) : selected.latitude,
+      longitude: form.longitude ? parseFloat(form.longitude) : selected.longitude,
+      organization_id: form.organizationId || selected.organizationId,
+      working_hours_start: form.workingHoursStart, working_hours_end: form.workingHoursEnd,
+      geofence_radius: parseInt(form.geofenceRadius), status: form.status,
+    }).eq('id', selected.id).select().single();
+    if (error) { toast.error('Failed to update location'); return; }
+    setLocations(p => p.map(l => l.id === selected.id ? (data as WorkLocation) : l));
     setEditOpen(false); setSelected(null); resetForm();
     toast.success('Work location updated');
   };
@@ -76,8 +95,10 @@ export default function WorkLocations() {
     setEditOpen(true);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
+    const { error } = await supabase.from('work_locations').delete().eq('id', deleteTarget.id);
+    if (error) { toast.error('Failed to delete location'); return; }
     setLocations(p => p.filter(l => l.id !== deleteTarget.id));
     setDeleteTarget(null);
     toast.success('Location deleted');
@@ -99,7 +120,7 @@ export default function WorkLocations() {
           <select value={form.organizationId} onChange={e => setForm(p => ({ ...p, organizationId: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
             <option value="">-- Select Organization --</option>
-            {ORGANIZATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </div>
         <Input label={t('workLocations.geofenceRadius')} type="number" value={form.geofenceRadius} onChange={e => setForm(p => ({ ...p, geofenceRadius: e.target.value }))} />
@@ -116,6 +137,17 @@ export default function WorkLocations() {
       </div>
     </div>
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        <svg className="animate-spin w-8 h-8" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -136,9 +168,10 @@ export default function WorkLocations() {
 
       {view === 'list' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {locations.map(loc => {
-            const org = ORGANIZATIONS.find(o => o.id === loc.organizationId);
-            const assignedMembers = MEMBERS.filter(m => m.workLocationId === loc.id);
+          {locations.length === 0 ? (
+            <div className="col-span-3 text-center py-16 text-gray-400">No work locations found.</div>
+          ) : locations.map(loc => {
+            const org = organizations.find(o => o.id === loc.organizationId);
             return (
               <Card key={loc.id} hover className="group">
                 <div className="flex items-start justify-between mb-3">
@@ -170,7 +203,7 @@ export default function WorkLocations() {
                 </div>
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
-                  <span className="text-xs text-gray-500">{assignedMembers.length} members assigned</span>
+                  <span className="text-xs text-gray-500">{loc.assignedMembers?.length ?? 0} members assigned</span>
                   <div className="flex gap-1.5">
                     <button onClick={() => openEdit(loc)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-blue-600 transition-colors">
                       <Edit size={14} />
@@ -192,7 +225,7 @@ export default function WorkLocations() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {locations.map(loc => {
-              const org = ORGANIZATIONS.find(o => o.id === loc.organizationId);
+              const org = organizations.find(o => o.id === loc.organizationId);
               return (
                 <div key={loc.id}>
                   <Marker position={[loc.latitude, loc.longitude]}>

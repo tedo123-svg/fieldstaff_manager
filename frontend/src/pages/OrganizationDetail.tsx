@@ -1,18 +1,50 @@
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Users, UserCheck, Briefcase, MapPin } from 'lucide-react';
-import { ORGANIZATIONS, MEMBERS, WORK_LOCATIONS } from '../data/mockData';
+import type { Organization, Member, WorkLocation } from '../types';
 import MemberCard from '../components/members/MemberCard';
 import Card from '../components/common/Card';
 import AttendanceChart from '../components/charts/AttendanceChart';
+import { supabase } from '../lib/supabase';
 
 export default function OrganizationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const org = ORGANIZATIONS.find(o => o.id === id);
-  const members = MEMBERS.filter(m => m.organizationId === id);
-  const locations = WORK_LOCATIONS.filter(l => l.organizationId === id);
+
+  const [org, setOrg] = useState<Organization | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [locations, setLocations] = useState<WorkLocation[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      if (!id) return;
+      setLoading(true);
+      const [{ data: orgData }, { data: membersData }, { data: locsData }] = await Promise.all([
+        supabase.from('organizations').select('*').eq('id', id).single(),
+        supabase.from('members').select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)').eq('organization_id', id),
+        supabase.from('work_locations').select('*').eq('organization_id', id),
+      ]);
+      if (orgData) setOrg(orgData as Organization);
+      if (membersData) setMembers(membersData as Member[]);
+      if (locsData) setLocations(locsData as WorkLocation[]);
+      setLoading(false);
+    }
+    load();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        <svg className="animate-spin w-8 h-8" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
 
   if (!org) return <div className="p-8 text-gray-400">Organization not found</div>;
 

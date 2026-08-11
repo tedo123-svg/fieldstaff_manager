@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserPlus, LayoutGrid, List, SlidersHorizontal, Users } from 'lucide-react';
-import { MEMBERS, ORGANIZATIONS } from '../data/mockData';
-import type { Member, MemberFilters } from '../types';
+import type { Member, Organization, MemberFilters } from '../types';
 import MemberCard from '../components/members/MemberCard';
 import Modal from '../components/common/Modal';
 import MemberForm from '../components/members/MemberForm';
@@ -13,17 +12,34 @@ import Avatar from '../components/common/Avatar';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { supabase } from '../lib/supabase';
 
 export default function Members() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [members, setMembers] = useState<Member[]>(MEMBERS);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [addOpen, setAddOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<MemberFilters>({
     search: '', organizationId: '', status: '', locationStatus: '', attendanceStatus: '', isSharing: '',
   });
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [{ data: membersData }, { data: orgsData }] = await Promise.all([
+        supabase.from('members').select('*, organization:organizations(*), workLocation:work_locations(*), lastLocation:gps_locations(*), todayAttendance:attendances(*)'),
+        supabase.from('organizations').select('*'),
+      ]);
+      if (membersData) setMembers(membersData as Member[]);
+      if (orgsData) setOrganizations(orgsData as Organization[]);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   const filtered = members.filter(m => {
     if (filters.search) {
@@ -39,19 +55,30 @@ export default function Members() {
     return true;
   });
 
-  const handleAdd = (data: Partial<Member>) => {
-    const newMember: Member = {
-      id: `m-${Date.now()}`, fullName: data.fullName!, memberId: data.memberId!,
-      gender: data.gender!, phone: data.phone!, profilePhoto: data.profilePhoto,
-      organizationId: data.organizationId!, organization: ORGANIZATIONS.find(o => o.id === data.organizationId),
-      jobRole: data.jobRole!, workAddress: data.workAddress!, workLocationId: data.workLocationId,
-      registrationDate: data.registrationDate!, status: data.status!,
-      emergencyContact: data.emergencyContact!, notes: data.notes,
-      locationStatus: 'OFFLINE', isSharing: false,
-    };
-    setMembers(p => [newMember, ...p]);
+  const handleAdd = async (data: Partial<Member>) => {
+    const { data: inserted, error } = await supabase.from('members').insert([{
+      full_name: data.fullName,
+      member_id: data.memberId,
+      gender: data.gender,
+      phone: data.phone,
+      profile_photo: data.profilePhoto,
+      organization_id: data.organizationId,
+      job_role: data.jobRole,
+      work_address: data.workAddress,
+      work_location_id: data.workLocationId,
+      registration_date: data.registrationDate,
+      status: data.status,
+      emergency_contact: data.emergencyContact,
+      notes: data.notes,
+    }]).select('*, organization:organizations(*)').single();
+
+    if (error) {
+      toast.error('Failed to add member');
+      return;
+    }
+    setMembers(p => [inserted as Member, ...p]);
     setAddOpen(false);
-    toast.success(`${data.fullName} ${t('common.success').toLowerCase()}!`);
+    toast.success(`${data.fullName} added successfully!`);
   };
 
   const SelectFilter = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
@@ -65,6 +92,17 @@ export default function Members() {
       </select>
     </div>
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        <svg className="animate-spin w-8 h-8" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -97,7 +135,7 @@ export default function Members() {
       {showFilters && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <SelectFilter label={t('members.organization')} value={filters.organizationId} onChange={v => setFilters(p => ({ ...p, organizationId: v }))}
-            options={[{ value: '', label: t('common.all') }, ...ORGANIZATIONS.map(o => ({ value: o.id, label: o.name }))]} />
+            options={[{ value: '', label: t('common.all') }, ...organizations.map(o => ({ value: o.id, label: o.name }))]} />
           <SelectFilter label={t('members.status')} value={filters.status} onChange={v => setFilters(p => ({ ...p, status: v }))}
             options={[{ value: '', label: t('common.all') }, { value: 'ACTIVE', label: t('status.active') }, { value: 'INACTIVE', label: t('status.inactive') }, { value: 'SUSPENDED', label: t('status.suspended') }]} />
           <SelectFilter label="Location Status" value={filters.locationStatus} onChange={v => setFilters(p => ({ ...p, locationStatus: v }))}

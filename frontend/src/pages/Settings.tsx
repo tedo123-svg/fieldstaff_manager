@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Save, Globe, Moon, Sun, Radio, Clock, Bell, Shield, Users, Database } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -8,6 +8,7 @@ import Input from '../components/common/Input';
 import Badge from '../components/common/Badge';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { supabase } from '../lib/supabase';
 
 const LANGS = [
   { code: 'am', label: 'አማርኛ (Amharic)', flag: '🇪🇹' },
@@ -23,10 +24,13 @@ const ALERT_RULES = [
   { id: 'a5', type: 'GPS_STOPPED', label: 'GPS Sharing Stopped', description: 'Notify when member stops sharing GPS location', enabled: true },
 ];
 
-const DEMO_USERS = [
-  { id: 'u1', name: 'Super Admin', email: 'admin@fieldstaff.et', role: 'SUPER_ADMIN', status: 'ACTIVE' },
-  { id: 'u2', name: 'Org Manager', email: 'manager@fieldstaff.et', role: 'ORG_MANAGER', status: 'ACTIVE' },
-];
+interface AppUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+}
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
@@ -39,6 +43,27 @@ export default function Settings() {
   const [activeSection, setActiveSection] = useState('general');
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    supabase
+      .from('profiles')
+      .select('id, name, role, status, user_email')
+      .then(({ data }) => {
+        if (data) {
+          setAppUsers(
+            (data as { id: string; name: string; role: string; status: string; user_email: string }[]).map(u => ({
+              id: u.id,
+              email: u.user_email ?? '',
+              name: u.name,
+              role: u.role,
+              status: u.status,
+            }))
+          );
+        }
+      });
+  }, [isSuperAdmin]);
 
   const toggleDark = () => {
     const next = !darkMode;
@@ -216,7 +241,9 @@ export default function Settings() {
             <Card>
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><Users size={16} />{t('settings.userManagement')}</h3>
               <div className="space-y-3">
-                {DEMO_USERS.map(u => (
+                {appUsers.length === 0 ? (
+                  <p className="text-sm text-gray-400">No users found.</p>
+                ) : appUsers.map(u => (
                   <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                     <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-sm">
                       {u.name.charAt(0)}

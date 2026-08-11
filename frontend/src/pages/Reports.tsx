@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, FileText, FileSpreadsheet, Filter } from 'lucide-react';
-import { MEMBERS, ORGANIZATIONS, getAttendanceHistory } from '../data/mockData';
-import type { ReportFilter } from '../types';
+import type { Member, Attendance, Organization, ReportFilter } from '../types';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
@@ -10,6 +9,7 @@ import Avatar from '../components/common/Avatar';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { supabase } from '../lib/supabase';
 
 const REPORT_TYPES = [
   { key: 'members', labelKey: 'reports.memberList', icon: '👥' },
@@ -27,48 +27,62 @@ export default function Reports() {
   const [filter, setFilter] = useState<ReportFilter>({
     type: 'members', dateFrom: weekAgo, dateTo: today, organizationId: '', memberId: '',
   });
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [reportData, setReportData] = useState<(Member | Attendance)[]>([]);
   const [generated, setGenerated] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleGenerate = () => { setGenerated(true); toast.success('Report generated'); };
+  useEffect(() => {
+    supabase.from('organizations').select('*').then(({ data }) => {
+      if (data) setOrganizations(data as Organization[]);
+    });
+  }, []);
 
-  const handleExport = (format: 'pdf' | 'excel' | 'csv') => {
-    toast.success(`Exporting as ${format.toUpperCase()}...`);
-    // In production: call backend API to generate and download file
-  };
+  const handleGenerate = async () => {
+    setLoading(true);
+    setGenerated(false);
 
-  const attendanceHistory = getAttendanceHistory();
-
-  const getReportData = () => {
-    switch (filter.type) {
-      case 'members': {
-        let data = MEMBERS;
-        if (filter.organizationId) data = data.filter(m => m.organizationId === filter.organizationId);
-        if (filter.memberId) data = data.filter(m => m.id === filter.memberId);
-        return data;
+    try {
+      if (filter.type === 'members') {
+        let query = supabase.from('members').select('*, organization:organizations(*)');
+        if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
+        if (filter.memberId) query = query.eq('id', filter.memberId);
+        const { data } = await query;
+        setReportData((data as Member[]) ?? []);
+      } else if (filter.type === 'attendance' || filter.type === 'late') {
+        let query = supabase
+          .from('attendances')
+          .select('*, member:members(*, organization:organizations(*))')
+          .gte('date', filter.dateFrom)
+          .lte('date', filter.dateTo);
+        if (filter.organizationId) query = query.eq('member.organization_id', filter.organizationId);
+        if (filter.memberId) query = query.eq('member_id', filter.memberId);
+        if (filter.type === 'late') query = query.eq('status', 'LATE');
+        const { data } = await query;
+        setReportData((data as Attendance[]) ?? []);
+      } else if (filter.type === 'location' || filter.type === 'outside') {
+        let query = supabase
+          .from('members')
+          .select('*, organization:organizations(*), lastLocation:gps_locations(*)')
+          .not('lastLocation', 'is', null);
+        if (filter.organizationId) query = query.eq('organization_id', filter.organizationId);
+        if (filter.type === 'outside') query = query.eq('location_status', 'OUTSIDE');
+        const { data } = await query;
+        setReportData((data as Member[]) ?? []);
       }
-      case 'attendance':
-      case 'late':
-      case 'outside': {
-        let data = attendanceHistory.filter(a => a.date >= filter.dateFrom && a.date <= filter.dateTo);
-        if (filter.organizationId) data = data.filter(a => a.member?.organizationId === filter.organizationId);
-        if (filter.memberId) data = data.filter(a => a.memberId === filter.memberId);
-        if (filter.type === 'late') data = data.filter(a => a.status === 'LATE');
-        if (filter.type === 'outside') data = MEMBERS.filter(m => {
-          if (filter.organizationId && m.organizationId !== filter.organizationId) return false;
-          return m.locationStatus === 'OUTSIDE';
-        }) as unknown as typeof data;
-        return data;
-      }
-      case 'location': {
-        let data = MEMBERS.filter(m => m.lastLocation);
-        if (filter.organizationId) data = data.filter(m => m.organizationId === filter.organizationId);
-        return data;
-      }
-      default: return [];
+      setGenerated(true);
+      toast.success('Report generated');
+    } catch {
+      toast.error('Failed to generate report');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const reportData = generated ? getReportData() : [];
+  const handleExport = (fmt: 'pdf' | 'excel' | 'csv') => {
+    toast.success(`Exporting as ${fmt.toUpperCase()}...`);
+    // TODO: call backend API to generate and download file
+  };
 
   const renderTable = () => {
     if (!generated || reportData.length === 0) return (
@@ -78,7 +92,7 @@ export default function Reports() {
     );
 
     if (filter.type === 'members') {
-      const members = reportData as typeof MEMBERS;
+      const members = reportData as Member[];
       return (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -112,7 +126,7 @@ export default function Reports() {
     }
 
     if (filter.type === 'attendance' || filter.type === 'late') {
-      const records = reportData as ReturnType<typeof getAttendanceHistory>;
+      const records = reportData as Attendance[];
       return (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -139,7 +153,7 @@ export default function Reports() {
     }
 
     if (filter.type === 'location' || filter.type === 'outside') {
-      const members = reportData as typeof MEMBERS;
+      const members = reportData as Member[];
       return (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -222,11 +236,13 @@ export default function Reports() {
               <select value={filter.organizationId} onChange={e => setFilter(p => ({ ...p, organizationId: e.target.value }))}
                 className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="">{t('common.all')}</option>
-                {ORGANIZATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </div>
 
-            <Button onClick={handleGenerate} className="w-full justify-center">{t('reports.generate')}</Button>
+            <Button onClick={handleGenerate} className="w-full justify-center" disabled={loading}>
+              {loading ? 'Generating...' : t('reports.generate')}
+            </Button>
           </div>
         </Card>
 
@@ -243,7 +259,14 @@ export default function Reports() {
           )}
 
           <Card padding={false}>
-            {renderTable()}
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-gray-400">
+                <svg className="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+              </div>
+            ) : renderTable()}
           </Card>
         </div>
       </div>
