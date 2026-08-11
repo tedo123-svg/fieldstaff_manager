@@ -23,6 +23,117 @@ L.Icon.Default.mergeOptions({
 
 const CENTER: [number, number] = [9.0192, 38.7525];
 
+// ── Defined OUTSIDE WorkLocations so React never remounts it on re-render ──
+interface LocationFormValues {
+  name: string;
+  address: string;
+  latitude: string;
+  longitude: string;
+  organizationId: string;
+  workingHoursStart: string;
+  workingHoursEnd: string;
+  geofenceRadius: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}
+
+function LocationForm({
+  form,
+  setForm,
+  organizations,
+  t,
+}: {
+  form: LocationFormValues;
+  setForm: React.Dispatch<React.SetStateAction<LocationFormValues>>;
+  organizations: Organization[];
+  t: (key: string) => string;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2">
+          <Input
+            label={t('workLocations.locationName') + ' *'}
+            value={form.name}
+            onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+          />
+        </div>
+        <div className="col-span-2">
+          <Input
+            label={t('workLocations.address') + ' *'}
+            value={form.address}
+            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
+          />
+        </div>
+        <Input
+          label={t('workLocations.latitude') + ' *'}
+          type="number" step="0.000001"
+          value={form.latitude}
+          onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
+          placeholder="9.0192"
+        />
+        <Input
+          label={t('workLocations.longitude') + ' *'}
+          type="number" step="0.000001"
+          value={form.longitude}
+          onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
+          placeholder="38.7525"
+        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {t('workLocations.assignedOrg')} *
+          </label>
+          <select
+            value={form.organizationId}
+            onChange={e => setForm(p => ({ ...p, organizationId: e.target.value }))}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="">-- Select Organization --</option>
+            {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        </div>
+        <Input
+          label={t('workLocations.geofenceRadius')}
+          type="number"
+          value={form.geofenceRadius}
+          onChange={e => setForm(p => ({ ...p, geofenceRadius: e.target.value }))}
+        />
+        <Input
+          label="Working Hours Start"
+          type="time"
+          value={form.workingHoursStart}
+          onChange={e => setForm(p => ({ ...p, workingHoursStart: e.target.value }))}
+        />
+        <Input
+          label="Working Hours End"
+          type="time"
+          value={form.workingHoursEnd}
+          onChange={e => setForm(p => ({ ...p, workingHoursEnd: e.target.value }))}
+        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {t('workLocations.locationStatus')}
+          </label>
+          <select
+            value={form.status}
+            onChange={e => setForm(p => ({ ...p, status: e.target.value as 'ACTIVE' | 'INACTIVE' }))}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ───────────────────────────────────────────────────────────────────────────
+
+const EMPTY_FORM: LocationFormValues = {
+  name: '', address: '', latitude: '', longitude: '',
+  organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00',
+  geofenceRadius: '200', status: 'ACTIVE',
+};
+
 export default function WorkLocations() {
   const { t } = useTranslation();
   const [locations, setLocations] = useState<WorkLocation[]>([]);
@@ -33,14 +144,9 @@ export default function WorkLocations() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WorkLocation | null>(null);
   const [view, setView] = useState<'list' | 'map'>('list');
+  const [form, setForm] = useState<LocationFormValues>(EMPTY_FORM);
 
-  const [form, setForm] = useState({
-    name: '', address: '', latitude: '', longitude: '',
-    organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00',
-    geofenceRadius: '200', status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
-  });
-
-  const resetForm = () => setForm({ name: '', address: '', latitude: '', longitude: '', organizationId: '', workingHoursStart: '08:00', workingHoursEnd: '17:00', geofenceRadius: '200', status: 'ACTIVE' });
+  const resetForm = () => setForm(EMPTY_FORM);
 
   useEffect(() => {
     async function load() {
@@ -76,12 +182,15 @@ export default function WorkLocations() {
   const handleEdit = async () => {
     if (!selected) return;
     const { data, error } = await supabase.from('work_locations').update({
-      name: form.name || selected.name, address: form.address || selected.address,
+      name: form.name || selected.name,
+      address: form.address || selected.address,
       latitude: form.latitude ? parseFloat(form.latitude) : selected.latitude,
       longitude: form.longitude ? parseFloat(form.longitude) : selected.longitude,
       organization_id: form.organizationId || selected.organizationId,
-      working_hours_start: form.workingHoursStart, working_hours_end: form.workingHoursEnd,
-      geofence_radius: parseInt(form.geofenceRadius), status: form.status,
+      working_hours_start: form.workingHoursStart,
+      working_hours_end: form.workingHoursEnd,
+      geofence_radius: parseInt(form.geofenceRadius),
+      status: form.status,
     }).eq('id', selected.id).select().single();
     if (error) { toast.error('Failed to update location'); return; }
     setLocations(p => p.map(l => l.id === selected.id ? (data as WorkLocation) : l));
@@ -91,7 +200,13 @@ export default function WorkLocations() {
 
   const openEdit = (loc: WorkLocation) => {
     setSelected(loc);
-    setForm({ name: loc.name, address: loc.address, latitude: String(loc.latitude), longitude: String(loc.longitude), organizationId: loc.organizationId, workingHoursStart: loc.workingHoursStart, workingHoursEnd: loc.workingHoursEnd, geofenceRadius: String(loc.geofenceRadius), status: loc.status });
+    setForm({
+      name: loc.name, address: loc.address,
+      latitude: String(loc.latitude), longitude: String(loc.longitude),
+      organizationId: loc.organizationId,
+      workingHoursStart: loc.workingHoursStart, workingHoursEnd: loc.workingHoursEnd,
+      geofenceRadius: String(loc.geofenceRadius), status: loc.status,
+    });
     setEditOpen(true);
   };
 
@@ -103,40 +218,6 @@ export default function WorkLocations() {
     setDeleteTarget(null);
     toast.success('Location deleted');
   };
-
-  const LocationForm = () => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <Input label={t('workLocations.locationName') + ' *'} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
-        </div>
-        <div className="col-span-2">
-          <Input label={t('workLocations.address') + ' *'} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} />
-        </div>
-        <Input label={t('workLocations.latitude') + ' *'} type="number" step="0.000001" value={form.latitude} onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))} placeholder="9.0192" />
-        <Input label={t('workLocations.longitude') + ' *'} type="number" step="0.000001" value={form.longitude} onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))} placeholder="38.7525" />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('workLocations.assignedOrg')} *</label>
-          <select value={form.organizationId} onChange={e => setForm(p => ({ ...p, organizationId: e.target.value }))}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-            <option value="">-- Select Organization --</option>
-            {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-        </div>
-        <Input label={t('workLocations.geofenceRadius')} type="number" value={form.geofenceRadius} onChange={e => setForm(p => ({ ...p, geofenceRadius: e.target.value }))} />
-        <Input label="Working Hours Start" type="time" value={form.workingHoursStart} onChange={e => setForm(p => ({ ...p, workingHoursStart: e.target.value }))} />
-        <Input label="Working Hours End" type="time" value={form.workingHoursEnd} onChange={e => setForm(p => ({ ...p, workingHoursEnd: e.target.value }))} />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('workLocations.locationStatus')}</label>
-          <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as 'ACTIVE' | 'INACTIVE' }))}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-            <option value="ACTIVE">Active</option>
-            <option value="INACTIVE">Inactive</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  );
 
   if (loading) {
     return (
@@ -162,7 +243,9 @@ export default function WorkLocations() {
             <button onClick={() => setView('list')} className={clsx('px-3 py-2 text-sm', view === 'list' ? 'bg-green-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700')}>List</button>
             <button onClick={() => setView('map')} className={clsx('px-3 py-2 text-sm', view === 'map' ? 'bg-green-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700')}>Map</button>
           </div>
-          <Button icon={<Plus size={16} />} onClick={() => { resetForm(); setAddOpen(true); }}>{t('workLocations.addLocation')}</Button>
+          <Button icon={<Plus size={16} />} onClick={() => { resetForm(); setAddOpen(true); }}>
+            {t('workLocations.addLocation')}
+          </Button>
         </div>
       </div>
 
@@ -186,22 +269,18 @@ export default function WorkLocations() {
                   </div>
                   <Badge label={loc.status} variant={loc.status === 'ACTIVE' ? 'success' : 'default'} />
                 </div>
-
                 <div className="space-y-1.5 mb-3">
                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Clock size={12} />
-                    <span>{loc.workingHoursStart} – {loc.workingHoursEnd}</span>
+                    <Clock size={12} /><span>{loc.workingHoursStart} – {loc.workingHoursEnd}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Radio size={12} />
-                    <span>Geofence: {loc.geofenceRadius}m</span>
+                    <Radio size={12} /><span>Geofence: {loc.geofenceRadius}m</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: org?.color }} />
                     <span style={{ color: org?.color }} className="font-medium">{org?.name}</span>
                   </div>
                 </div>
-
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
                   <span className="text-xs text-gray-500">{loc.assignedMembers?.length ?? 0} members assigned</span>
                   <div className="flex gap-1.5">
@@ -254,13 +333,13 @@ export default function WorkLocations() {
       {/* Add Modal */}
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('workLocations.addLocation')} size="md"
         footer={<><Button variant="outline" onClick={() => setAddOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleAdd}>{t('common.save')}</Button></>}>
-        <LocationForm />
+        <LocationForm form={form} setForm={setForm} organizations={organizations} t={t} />
       </Modal>
 
       {/* Edit Modal */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Work Location" size="md"
         footer={<><Button variant="outline" onClick={() => setEditOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleEdit}>{t('common.save')}</Button></>}>
-        <LocationForm />
+        <LocationForm form={form} setForm={setForm} organizations={organizations} t={t} />
       </Modal>
 
       {/* Delete confirm */}

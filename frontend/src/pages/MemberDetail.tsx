@@ -13,6 +13,19 @@ import MemberForm from '../components/members/MemberForm';
 import { formatDistanceToNow, format } from 'date-fns';
 import toast from 'react-hot-toast';
 
+// ── Outside component — prevents remount/focus loss on re-render ──
+function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
+      <Icon size={15} className="text-gray-400 mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 const locationStatusConfig = {
   AT_WORK: { label: 'At Work Location', variant: 'success' as const },
   NEARBY: { label: 'Nearby', variant: 'warning' as const },
@@ -112,16 +125,6 @@ export default function MemberDetail() {
     navigate('/members');
     toast.success('Member removed');
   };
-
-  const InfoRow = ({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) => (
-    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
-      <Icon size={15} className="text-gray-400 mt-0.5 shrink-0" />
-      <div className="min-w-0">
-        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
-        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{value}</p>
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-6">

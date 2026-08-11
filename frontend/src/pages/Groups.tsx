@@ -29,18 +29,53 @@ function SelectEl({ label, value, onChange, disabled, children }: {
   );
 }
 
-interface GroupWithCount extends Group {
-  memberCount: number;
-}
-
-interface GroupForm {
+// ── GroupForm defined OUTSIDE to prevent remount on re-render ──────────────
+interface GroupFormValues {
   name: string;
   organizationId: string;
   subcityId: string;
   woredaId: string;
 }
 
-const EMPTY_FORM: GroupForm = { name: '', organizationId: '', subcityId: '', woredaId: '' };
+function GroupForm({
+  form, setForm, orgs, subcities, woredas,
+}: {
+  form: GroupFormValues;
+  setForm: React.Dispatch<React.SetStateAction<GroupFormValues>>;
+  orgs: Organization[];
+  subcities: Subcity[];
+  woredas: Woreda[];
+}) {
+  return (
+    <div className="space-y-4">
+      <Input
+        label="Group Name *"
+        value={form.name}
+        onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+        placeholder="e.g. ቡድን ፩"
+      />
+      <SelectEl label="Organization *" value={form.organizationId} onChange={v => setForm(p => ({ ...p, organizationId: v }))}>
+        <option value="">-- Select Organization --</option>
+        {orgs.map(o => <option key={o.id} value={o.id}>{o.name} ({o.nameEn})</option>)}
+      </SelectEl>
+      <SelectEl label="ክፍለ ከተማ (Subcity)" value={form.subcityId} onChange={v => setForm(p => ({ ...p, subcityId: v, woredaId: '' }))}>
+        <option value="">-- Select Subcity --</option>
+        {subcities.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </SelectEl>
+      <SelectEl label="ወረዳ (Woreda) *" value={form.woredaId} onChange={v => setForm(p => ({ ...p, woredaId: v }))} disabled={!form.subcityId}>
+        <option value="">-- Select Woreda --</option>
+        {woredas.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </SelectEl>
+    </div>
+  );
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+interface GroupWithCount extends Group {
+  memberCount: number;
+}
+
+const EMPTY_FORM: GroupFormValues = { name: '', organizationId: '', subcityId: '', woredaId: '' };
 
 export default function Groups() {
   const { t } = useTranslation();
@@ -54,7 +89,7 @@ export default function Groups() {
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<GroupWithCount | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GroupWithCount | null>(null);
-  const [form, setForm] = useState<GroupForm>(EMPTY_FORM);
+  const [form, setForm] = useState<GroupFormValues>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
   // Filter state
@@ -161,29 +196,6 @@ export default function Groups() {
   const visibleGroups = groups.filter(g =>
     (!filterOrg || g.organizationId === filterOrg) &&
     (!filterWoreda || g.woredaId === filterWoreda)
-  );
-
-  const GroupForm = () => (
-    <div className="space-y-4">
-      <Input
-        label="Group Name *"
-        value={form.name}
-        onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-        placeholder="e.g. ቡድን ፩"
-      />
-      <SelectEl label="Organization *" value={form.organizationId} onChange={v => setForm(p => ({ ...p, organizationId: v }))}>
-        <option value="">-- Select Organization --</option>
-        {orgs.map(o => <option key={o.id} value={o.id}>{o.name} ({o.nameEn})</option>)}
-      </SelectEl>
-      <SelectEl label="ክፍለ ከተማ (Subcity)" value={form.subcityId} onChange={v => setForm(p => ({ ...p, subcityId: v, woredaId: '' }))}>
-        <option value="">-- Select Subcity --</option>
-        {subcities.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </SelectEl>
-      <SelectEl label="ወረዳ (Woreda) *" value={form.woredaId} onChange={v => setForm(p => ({ ...p, woredaId: v }))} disabled={!form.subcityId}>
-        <option value="">-- Select Woreda --</option>
-        {woredas.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-      </SelectEl>
-    </div>
   );
 
   if (loading) {
@@ -322,13 +334,13 @@ export default function Groups() {
       {/* Add modal */}
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Group" size="sm"
         footer={<><Button variant="outline" onClick={() => setAddOpen(false)}>{t('common.cancel')}</Button><Button onClick={handleAdd} loading={saving}>{t('common.save')}</Button></>}>
-        <GroupForm />
+        <GroupForm form={form} setForm={setForm} orgs={orgs} subcities={subcities} woredas={woredas} />
       </Modal>
 
       {/* Edit modal */}
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Group" size="sm"
         footer={<><Button variant="outline" onClick={() => setEditTarget(null)}>{t('common.cancel')}</Button><Button onClick={handleEdit} loading={saving}>{t('common.save')}</Button></>}>
-        <GroupForm />
+        <GroupForm form={form} setForm={setForm} orgs={orgs} subcities={subcities} woredas={woredas} />
       </Modal>
 
       {/* Delete confirm */}
