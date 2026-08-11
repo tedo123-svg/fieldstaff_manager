@@ -127,22 +127,22 @@ export default function Members() {
     const { data: inserted, error } = await supabase
       .from('members')
       .insert([{
-        fullName:        data.fullName,
-        memberId:        data.memberId,
-        gender:          data.gender,
-        phone:           data.phone,
-        profilePhoto:    data.profilePhoto,
-        subcityId:       data.subcityId       || null,
-        woredaId:        data.woredaId        || null,
-        organizationId:  data.organizationId,
-        groupId:         data.groupId         || null,
-        jobRole:         data.jobRole,
-        workAddress:     data.workAddress,
-        workLocationId:  data.workLocationId  || null,
-        registrationDate: data.registrationDate,
-        status:          data.status,
-        emergencyContact: data.emergencyContact,
-        notes:           data.notes,
+        full_name:         data.fullName,
+        member_id:         data.memberId,
+        gender:            data.gender,
+        phone:             data.phone,
+        profile_photo:     data.profilePhoto,
+        subcity_id:        data.subcityId        || null,
+        woreda_id:         data.woredaId         || null,
+        organization_id:   data.organizationId,
+        group_id:          data.groupId          || null,
+        job_role:          data.jobRole,
+        work_address:      data.workAddress,
+        work_location_id:  data.workLocationId   || null,
+        registration_date: data.registrationDate,
+        status:            data.status,
+        emergency_contact: data.emergencyContact,
+        notes:             data.notes,
       }])
       .select('*, organization:organizations(*)')
       .single();

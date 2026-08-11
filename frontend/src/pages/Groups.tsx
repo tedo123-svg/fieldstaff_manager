@@ -110,23 +110,48 @@ export default function Groups() {
   async function load() {
     setLoading(true);
     const [{ data: grps }, { data: orgData }, { data: sc }, { data: wr }] = await Promise.all([
-      supabase.from('groups').select('*, memberCount:members(count)').order('name'),
-      supabase.from('organizations').select('*').eq('hasGroups', true).order('name'),
+      supabase.from('groups').select('*, woreda:woredas(*), memberCount:members(count)').order('name'),
+      supabase.from('organizations').select('*').eq('has_groups', true).order('name'),
       supabase.from('subcities').select('*').order('name'),
-      supabase.from('woredas').select('*').order('name'),
+      supabase.from('woredas').select('*, subcity:subcities(*)').order('name'),
     ]);
     if (grps) {
-      setGroups(grps.map((g: Group & { memberCount: { count: number }[] }) => ({
-        ...g,
-        memberCount: g.memberCount?.[0]?.count ?? 0,
+      setGroups((grps as Record<string, unknown>[]).map(g => ({
+        id:             g.id as string,
+        name:           g.name as string,
+        organizationId: (g.organization_id ?? g.organizationId) as string,
+        woredaId:       (g.woreda_id ?? g.woredaId) as string,
+        woreda:         g.woreda as Woreda | undefined,
+        memberCount:    (g.memberCount as { count: number }[])?.[0]?.count ?? 0,
       })));
     }
     if (orgData) {
-      setOrgs(orgData as Organization[]);
-      setExpandedOrgs(new Set((orgData as Organization[]).map(o => o.id)));
+      const mapped = (orgData as Record<string, unknown>[]).map(o => ({
+        id:          o.id as string,
+        name:        o.name as string,
+        nameEn:      (o.name_en ?? o.nameEn ?? '') as string,
+        nameOm:      (o.name_om ?? o.nameOm ?? '') as string,
+        color:       (o.color ?? '#3B82F6') as string,
+        bgColor:     (o.bg_color ?? o.bgColor ?? '') as string,
+        textColor:   (o.text_color ?? o.textColor ?? 'text-white') as string,
+        icon:        (o.icon ?? '🔵') as string,
+        description: o.description as string | undefined,
+        hasGroups:   (o.has_groups ?? o.hasGroups ?? false) as boolean,
+        memberCount: (o.member_count ?? o.memberCount ?? 0) as number,
+        activeCount: (o.active_count ?? o.activeCount ?? 0) as number,
+      })) as Organization[];
+      setOrgs(mapped);
+      setExpandedOrgs(new Set(mapped.map(o => o.id)));
     }
     if (sc) setSubcities(sc as Subcity[]);
-    if (wr) setAllWoredas(wr as Woreda[]);
+    if (wr) {
+      setAllWoredas((wr as Record<string, unknown>[]).map(w => ({
+        id:        w.id as string,
+        name:      w.name as string,
+        subcityId: (w.subcity_id ?? w.subcityId) as string,
+        subcity:   w.subcity as Subcity | undefined,
+      })));
+    }
     setLoading(false);
   }
 
@@ -137,12 +162,20 @@ export default function Groups() {
     setSaving(true);
     const { data, error } = await supabase
       .from('groups')
-      .insert([{ name: form.name, organizationId: form.organizationId, woredaId: form.woredaId }])
-      .select('*')
+      .insert([{ name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId }])
+      .select('*, woreda:woredas(*)')
       .single();
     setSaving(false);
-    if (error) { toast.error('Failed to create group'); return; }
-    setGroups(p => [...p, { ...(data as Group), memberCount: 0 }]);
+    if (error) { toast.error('Failed to create group: ' + error.message); return; }
+    const g = data as Record<string, unknown>;
+    setGroups(p => [...p, {
+      id:             g.id as string,
+      name:           g.name as string,
+      organizationId: (g.organization_id ?? g.organizationId) as string,
+      woredaId:       (g.woreda_id ?? g.woredaId) as string,
+      woreda:         g.woreda as Woreda | undefined,
+      memberCount:    0,
+    }]);
     setAddOpen(false);
     setForm(EMPTY_FORM);
     toast.success('Group created');
@@ -155,13 +188,21 @@ export default function Groups() {
     setSaving(true);
     const { data, error } = await supabase
       .from('groups')
-      .update({ name: form.name, organizationId: form.organizationId, woredaId: form.woredaId })
+      .update({ name: form.name, organization_id: form.organizationId, woreda_id: form.woredaId })
       .eq('id', editTarget.id)
-      .select('*')
+      .select('*, woreda:woredas(*)')
       .single();
     setSaving(false);
-    if (error) { toast.error('Failed to update group'); return; }
-    setGroups(p => p.map(g => g.id === editTarget.id ? { ...(data as Group), memberCount: editTarget.memberCount } : g));
+    if (error) { toast.error('Failed to update group: ' + error.message); return; }
+    const g = data as Record<string, unknown>;
+    setGroups(p => p.map(gr => gr.id === editTarget.id ? {
+      id:             g.id as string,
+      name:           g.name as string,
+      organizationId: (g.organization_id ?? g.organizationId) as string,
+      woredaId:       (g.woreda_id ?? g.woredaId) as string,
+      woreda:         g.woreda as Woreda | undefined,
+      memberCount:    editTarget.memberCount,
+    } : gr));
     setEditTarget(null);
     setForm(EMPTY_FORM);
     toast.success('Group updated');
