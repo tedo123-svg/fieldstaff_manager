@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { supabase } from './lib/supabase';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -22,6 +24,45 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const { login, signOut } = useAuth();
+
+  // Sync Supabase session → Redux on startup and auth state changes
+  useEffect(() => {
+    // Get current session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase
+          .from('profiles')
+          .select('name, role, organization_id, avatar')
+          .eq('id', session.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            login(
+              {
+                id: session.user.id,
+                email: session.user.email ?? '',
+                name: profile?.name ?? session.user.email ?? '',
+                role: profile?.role ?? 'ORG_MANAGER',
+                organizationId: profile?.organization_id,
+                avatar: profile?.avatar,
+              },
+              session.access_token,
+            );
+          });
+      }
+    });
+
+    // Listen for auth changes (login/logout/token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        signOut();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <BrowserRouter>
       <Toaster
